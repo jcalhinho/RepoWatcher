@@ -96,7 +96,7 @@ export function getWebUiHtml(): string {
         grid-template-columns: 1fr auto;
       }
 
-      .row.patch-actions {
+      .row.graph-config {
         grid-template-columns: 1fr auto auto auto;
       }
 
@@ -146,11 +146,6 @@ export function getWebUiHtml(): string {
         background: #e2e8f0;
         border-color: #94a3b8;
         color: #0f172a;
-      }
-
-      button.apply {
-        background: linear-gradient(180deg, #22c55e 0%, #15803d 100%);
-        border-color: #16a34a;
       }
 
       button:disabled {
@@ -243,6 +238,74 @@ export function getWebUiHtml(): string {
       .graph-hint {
         color: #334155;
         font-size: 0.8rem;
+      }
+
+      .graph-main {
+        margin-top: 10px;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+        min-height: 0;
+      }
+
+      .graph-inspector {
+        border: 2px solid #64748b;
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 10px;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 8px;
+        min-height: 450px;
+      }
+
+      .graph-inspector .inspector-title {
+        margin: 0;
+        font-size: 0.92rem;
+        color: #0f172a;
+      }
+
+      .graph-inspector .inspector-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .graph-inspector .inspector-chip {
+        border-radius: 999px;
+        border: 1px solid #94a3b8;
+        background: #ffffff;
+        color: #0f172a;
+        font-size: 0.74rem;
+        padding: 3px 8px;
+      }
+
+      .graph-inspector .inspector-chip.risk-high {
+        border-color: #dc2626;
+        background: #fef2f2;
+        color: #991b1b;
+      }
+
+      .graph-inspector .inspector-chip.risk-medium {
+        border-color: #d97706;
+        background: #fffbeb;
+        color: #92400e;
+      }
+
+      .graph-inspector .inspector-body {
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .graph-search {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: minmax(160px, 1fr) auto auto auto;
+        gap: 8px;
+      }
+
+      .graph-search input {
+        height: 38px;
       }
 
       .graph-switches {
@@ -488,8 +551,10 @@ export function getWebUiHtml(): string {
 
       @media (max-width: 900px) {
         .row.two,
-        .row.patch-actions,
-        .split {
+        .row.graph-config,
+        .split,
+        .graph-main,
+        .graph-search {
           grid-template-columns: 1fr;
         }
       }
@@ -500,7 +565,7 @@ export function getWebUiHtml(): string {
       <section class="column left-column">
         <section class="card">
           <h1 class="title">RepoWatcher Local UI</h1>
-          <p class="subtle">Session locale, scan automatique du repo, schema interactif et edition supervisee.</p>
+          <p class="subtle">Session locale, scan automatique du repo, schema interactif et onboarding technique guide.</p>
         </section>
 
         <div class="left-scroll">
@@ -527,7 +592,7 @@ export function getWebUiHtml(): string {
           <section class="card">
             <h2 class="title">Schema interactif du repo</h2>
             <p class="subtle">Pan/zoom + clic fichier pour explication IA.</p>
-            <div class="row patch-actions" style="margin-top: 8px;">
+            <div class="row graph-config" style="margin-top: 8px;">
               <label style="grid-column: 1 / 2;">
                 Root path
                 <input id="graphRootPath" type="text" value="." />
@@ -559,7 +624,6 @@ export function getWebUiHtml(): string {
             <div class="graph-toolbar">
               <div class="graph-controls">
                 <button id="fitGraphBtn" class="secondary" type="button">Fit view</button>
-                <button id="resetGraphBtn" class="secondary" type="button">Reset view</button>
                 <button id="clearTrailBtn" class="secondary" type="button">Clear trail</button>
               </div>
               <div class="graph-switches">
@@ -568,70 +632,50 @@ export function getWebUiHtml(): string {
               </div>
               <div class="graph-hint">Bleu = user flow • Gris = imports techniques</div>
             </div>
-            <div style="margin-top: 10px;">
-              <div id="graphViewport" class="graph-viewport">
-                <svg id="graphSvg" viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid meet">
-                  <defs>
-                    <linearGradient id="edge-flow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stop-color="#1d4ed8" />
-                      <stop offset="100%" stop-color="#0ea5e9" />
-                    </linearGradient>
-                    <marker
-                      id="edge-flow-arrow"
-                      viewBox="0 0 10 10"
-                      refX="8"
-                      refY="5"
-                      markerWidth="7"
-                      markerHeight="7"
-                      orient="auto"
-                    >
-                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0ea5e9" />
-                    </marker>
-                  </defs>
-                  <g id="graphLayer"></g>
-                </svg>
-              </div>
+            <div class="graph-search">
+              <input id="graphSearchInput" type="text" placeholder="Rechercher un fichier (path, nom, role)" />
+              <button id="searchGraphBtn" class="secondary" type="button">Rechercher</button>
+              <button id="tourPrevBtn" class="secondary" type="button" disabled>Tour prev</button>
+              <button id="tourNextBtn" class="secondary" type="button" disabled>Tour next</button>
             </div>
-          </section>
-
-          <section class="card">
-            <h2 class="title">Patch supervise</h2>
-            <div class="row patch-actions" style="margin-top: 8px;">
-              <label style="grid-column: 1 / 2;">
-                Fichier relatif
-                <input id="patchPath" type="text" placeholder="ex: src/index.ts" />
-              </label>
-              <div style="display:flex; align-items:end;">
-                <button id="loadFileBtn" class="secondary" disabled>Load file</button>
-              </div>
-              <div style="display:flex; align-items:end;">
-                <button id="previewPatchBtn" class="secondary" disabled>Preview patch</button>
-              </div>
-              <div style="display:flex; align-items:end;">
-                <button id="applyPatchBtn" class="apply" disabled>Apply patch</button>
-              </div>
-            </div>
-            <label style="margin-top: 10px;">
-              Nouveau contenu
-              <textarea id="patchContent" style="min-height: 200px;" placeholder="Edite le contenu ici..."></textarea>
-            </label>
-            <div id="patchMeta" class="meta-grid" style="margin-top: 8px;"></div>
-          </section>
-
-          <section class="card split">
-            <div>
-              <h2 class="title" style="font-size: 0.95rem;">Diff Preview</h2>
-              <div class="code-box scroll-box" style="margin-top: 8px;"><pre id="diffHunk">(no preview)</pre></div>
-            </div>
-            <div class="split" style="grid-template-columns:1fr 1fr;">
+            <div class="graph-main">
               <div>
-                <h2 class="title" style="font-size: 0.9rem;">Before</h2>
-                <div class="code-box scroll-box" style="margin-top: 8px;"><pre id="beforePreview"></pre></div>
+                <div id="graphViewport" class="graph-viewport">
+                  <svg id="graphSvg" viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid meet">
+                    <defs>
+                      <linearGradient id="edge-flow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#1d4ed8" />
+                        <stop offset="100%" stop-color="#0ea5e9" />
+                      </linearGradient>
+                      <marker
+                        id="edge-flow-arrow"
+                        viewBox="0 0 10 10"
+                        refX="8"
+                        refY="5"
+                        markerWidth="7"
+                        markerHeight="7"
+                        orient="auto"
+                      >
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#0ea5e9" />
+                      </marker>
+                    </defs>
+                    <g id="graphLayer"></g>
+                  </svg>
+                </div>
               </div>
-              <div>
-                <h2 class="title" style="font-size: 0.9rem;">After</h2>
-                <div class="code-box scroll-box" style="margin-top: 8px;"><pre id="afterPreview"></pre></div>
+              <aside class="graph-inspector">
+                <h3 id="inspectorTitle" class="inspector-title">Inspector: sélectionne un fichier</h3>
+                <div id="inspectorMeta" class="inspector-meta"></div>
+                <div id="inspectorBody" class="inspector-body md-body">
+                  <p>Le panneau affiche ici l'explication pédagogique, les fonctions clés, variables, imports/exports et risques.</p>
+                </div>
+              </aside>
+            </div>
+            <div class="graph-toolbar">
+              <div class="graph-controls">
+                <button id="tourStartBtn" class="secondary" type="button">Start guided tour</button>
               </div>
+              <div id="tourStatus" class="graph-hint">Tour inactif</div>
             </div>
           </section>
         </div>
@@ -661,8 +705,7 @@ export function getWebUiHtml(): string {
       const state = {
         apiBase: window.location.origin,
         repoPath: window.localStorage.getItem("repoWatcherRepoPath") || "",
-        sessionId: null,
-        lastPatch: null
+        sessionId: null
       };
 
       const graphView = { x: 30, y: 30, scale: 0.9 };
@@ -670,7 +713,9 @@ export function getWebUiHtml(): string {
       let currentGraphData = null;
       let selectedNodeId = null;
       const clickedTrail = [];
+      const tourState = { paths: [], index: -1 };
       let dragState = null;
+      let inspectorRequestId = 0;
 
       const repoPathEl = document.getElementById("repoPath");
       const createSessionBtn = document.getElementById("createSessionBtn");
@@ -681,16 +726,6 @@ export function getWebUiHtml(): string {
       const messageInputEl = document.getElementById("messageInput");
       const chatLogEl = document.getElementById("chatLog");
 
-      const patchPathEl = document.getElementById("patchPath");
-      const patchContentEl = document.getElementById("patchContent");
-      const loadFileBtn = document.getElementById("loadFileBtn");
-      const previewPatchBtn = document.getElementById("previewPatchBtn");
-      const applyPatchBtn = document.getElementById("applyPatchBtn");
-      const patchMetaEl = document.getElementById("patchMeta");
-      const diffHunkEl = document.getElementById("diffHunk");
-      const beforePreviewEl = document.getElementById("beforePreview");
-      const afterPreviewEl = document.getElementById("afterPreview");
-
       const graphRootPathEl = document.getElementById("graphRootPath");
       const graphMaxNodesEl = document.getElementById("graphMaxNodes");
       const generateGraphBtn = document.getElementById("generateGraphBtn");
@@ -698,14 +733,21 @@ export function getWebUiHtml(): string {
       const graphKeyFilesEl = document.getElementById("graphKeyFiles");
       const graphRiskFilesEl = document.getElementById("graphRiskFiles");
       const graphTrailEl = document.getElementById("graphTrail");
+      const graphSearchInputEl = document.getElementById("graphSearchInput");
+      const searchGraphBtn = document.getElementById("searchGraphBtn");
       const graphViewportEl = document.getElementById("graphViewport");
-      const graphSvgEl = document.getElementById("graphSvg");
       const graphLayerEl = document.getElementById("graphLayer");
       const fitGraphBtn = document.getElementById("fitGraphBtn");
-      const resetGraphBtn = document.getElementById("resetGraphBtn");
       const clearTrailBtn = document.getElementById("clearTrailBtn");
       const toggleImportEdgesEl = document.getElementById("toggleImportEdges");
       const toggleFlowEdgesEl = document.getElementById("toggleFlowEdges");
+      const inspectorTitleEl = document.getElementById("inspectorTitle");
+      const inspectorMetaEl = document.getElementById("inspectorMeta");
+      const inspectorBodyEl = document.getElementById("inspectorBody");
+      const tourStartBtn = document.getElementById("tourStartBtn");
+      const tourPrevBtn = document.getElementById("tourPrevBtn");
+      const tourNextBtn = document.getElementById("tourNextBtn");
+      const tourStatusEl = document.getElementById("tourStatus");
 
       function setStatus(message, type) {
         statusEl.textContent = message;
@@ -717,19 +759,12 @@ export function getWebUiHtml(): string {
         return new Promise((resolve) => setTimeout(resolve, ms));
       }
 
-      function resetPatchPreview() {
-        state.lastPatch = null;
-        patchMetaEl.textContent = "";
-        diffHunkEl.textContent = "(no preview)";
-        beforePreviewEl.textContent = "";
-        afterPreviewEl.textContent = "";
-        applyPatchBtn.disabled = true;
-      }
-
       function resetGraphPanels() {
         currentGraphData = null;
         selectedNodeId = null;
         clickedTrail.length = 0;
+        tourState.paths = [];
+        tourState.index = -1;
         graphFilters.showImports = true;
         graphFilters.showFlow = true;
         if (toggleImportEdgesEl) toggleImportEdgesEl.checked = true;
@@ -739,6 +774,11 @@ export function getWebUiHtml(): string {
         if (graphRiskFilesEl) graphRiskFilesEl.innerHTML = "";
         if (graphTrailEl) graphTrailEl.innerHTML = "";
         if (graphLayerEl) graphLayerEl.innerHTML = "";
+        syncTourStatus();
+        setInspectorPlaceholder(
+          "Inspector: sélectionne un fichier",
+          "<p>Le panneau affiche ici l'explication pédagogique, les fonctions clés, variables, imports/exports et risques.</p>"
+        );
       }
 
       function renderTrailChips() {
@@ -780,10 +820,183 @@ export function getWebUiHtml(): string {
         const hasSession = Boolean(state.sessionId);
         sessionIdEl.textContent = state.sessionId || "-";
         sendBtn.disabled = !hasSession;
-        loadFileBtn.disabled = !hasSession;
-        previewPatchBtn.disabled = !hasSession;
         generateGraphBtn.disabled = !hasSession;
-        applyPatchBtn.disabled = !hasSession || !state.lastPatch;
+        if (tourStartBtn) tourStartBtn.disabled = !hasSession;
+        if (searchGraphBtn) searchGraphBtn.disabled = !hasSession;
+      }
+
+      function syncTourStatus() {
+        const hasTour = tourState.paths.length > 0 && tourState.index >= 0;
+        if (tourPrevBtn) {
+          tourPrevBtn.disabled = !hasTour || tourState.index <= 0;
+        }
+        if (tourNextBtn) {
+          tourNextBtn.disabled = !hasTour || tourState.index >= tourState.paths.length - 1;
+        }
+        if (!tourStatusEl) return;
+
+        if (!hasTour) {
+          tourStatusEl.textContent = "Tour inactif";
+          return;
+        }
+
+        const currentPath = tourState.paths[tourState.index] || "-";
+        tourStatusEl.textContent =
+          "Tour " +
+          (tourState.index + 1) +
+          "/" +
+          tourState.paths.length +
+          " • " +
+          truncateMiddle(currentPath, 58);
+      }
+
+      function setInspectorPlaceholder(title, contentHtml) {
+        if (inspectorTitleEl) {
+          inspectorTitleEl.textContent = title;
+        }
+        if (inspectorMetaEl) {
+          inspectorMetaEl.innerHTML = "";
+        }
+        if (inspectorBodyEl) {
+          inspectorBodyEl.innerHTML = contentHtml;
+        }
+      }
+
+      function centerNodeInView(node) {
+        if (!node || !graphViewportEl) return;
+        const nodeWidth = 236;
+        const nodeHeight = 56;
+        const viewportWidth = graphViewportEl.clientWidth || 1;
+        const viewportHeight = graphViewportEl.clientHeight || 1;
+        graphView.x = viewportWidth / 2 - (node.position.x + nodeWidth / 2) * graphView.scale;
+        graphView.y = viewportHeight / 2 - (node.position.y + nodeHeight / 2) * graphView.scale;
+        applyGraphTransform();
+      }
+
+      function renderInspectorContent(node, exp, mode) {
+        if (inspectorTitleEl) {
+          inspectorTitleEl.textContent = node.data.path;
+        }
+        if (inspectorMetaEl) {
+          inspectorMetaEl.innerHTML = "";
+          const addChip = (label, className) => {
+            const chip = document.createElement("span");
+            chip.className = "inspector-chip" + (className ? " " + className : "");
+            chip.textContent = label;
+            inspectorMetaEl.appendChild(chip);
+          };
+          addChip("role: " + (node.data.role || "module"), "");
+          addChip("risk: " + (node.data.riskLevel || "low"), "risk-" + (node.data.riskLevel || "low"));
+          addChip("importance: " + String(node.data.importance ?? 0), "");
+          if (exp?.confidence) addChip("confidence: " + exp.confidence, "");
+          if (mode) addChip("mode: " + mode, "");
+        }
+        const interactions = Array.isArray(exp?.interactions) ? exp.interactions.join("\\n- ") : "";
+        const keyFunctions = Array.isArray(exp?.keyFunctions) ? exp.keyFunctions.join("\\n- ") : "";
+        const keyVariables = Array.isArray(exp?.keyVariables) ? exp.keyVariables.join("\\n- ") : "";
+        const imports = Array.isArray(exp?.imports) ? exp.imports.join("\\n- ") : "";
+        const exportsList = Array.isArray(exp?.exports) ? exp.exports.join("\\n- ") : "";
+        const risks = Array.isArray(exp?.risks) ? exp.risks.join("\\n- ") : "";
+        const explainText = [
+          "Pourquoi dans le flow:",
+          exp?.whyInFlow || "",
+          "",
+          "Overview:",
+          exp?.overview || "",
+          "",
+          "Utility in app:",
+          exp?.utilityInApp || "",
+          "",
+          "Interactions:",
+          interactions ? "- " + interactions : "- (none)",
+          "",
+          "Key functions:",
+          keyFunctions ? "- " + keyFunctions : "- (none)",
+          "",
+          "Key variables:",
+          keyVariables ? "- " + keyVariables : "- (none)",
+          "",
+          "Imports:",
+          imports ? "- " + imports : "- (none)",
+          "",
+          "Exports:",
+          exportsList ? "- " + exportsList : "- (none)",
+          "",
+          "Risks:",
+          risks ? "- " + risks : "- (none)"
+        ].join("\\n");
+        if (inspectorBodyEl) {
+          inspectorBodyEl.innerHTML = renderMarkdown(explainText);
+        }
+      }
+
+      function buildGuidedTourPaths() {
+        if (!currentGraphData || !Array.isArray(currentGraphData.nodes)) {
+          return [];
+        }
+
+        const existingPaths = new Set(currentGraphData.nodes.map((node) => node.data.path));
+        const summary = currentGraphData.summary || {};
+        const byImportance = [...currentGraphData.nodes]
+          .sort((a, b) => (b.data.importance || 0) - (a.data.importance || 0))
+          .map((node) => node.data.path);
+        const candidates = [
+          ...(Array.isArray(summary.keyFiles) ? summary.keyFiles : []),
+          ...(Array.isArray(summary.riskFiles) ? summary.riskFiles : []),
+          ...clickedTrail,
+          ...byImportance
+        ];
+
+        const uniquePaths = [];
+        const seen = new Set();
+        for (const filePath of candidates) {
+          if (!filePath || seen.has(filePath) || !existingPaths.has(filePath)) {
+            continue;
+          }
+          seen.add(filePath);
+          uniquePaths.push(filePath);
+          if (uniquePaths.length >= 12) {
+            break;
+          }
+        }
+        return uniquePaths;
+      }
+
+      function findSearchMatches(query) {
+        if (!currentGraphData || !Array.isArray(currentGraphData.nodes)) {
+          return [];
+        }
+        const needle = String(query || "").trim().toLowerCase();
+        if (!needle) {
+          return [];
+        }
+
+        const scored = [];
+        for (const node of currentGraphData.nodes) {
+          const pathValue = String(node.data.path || "").toLowerCase();
+          const label = String(node.data.label || "").toLowerCase();
+          const role = String(node.data.role || "").toLowerCase();
+          const directory = String(node.data.directory || "").toLowerCase();
+          let score = 0;
+          if (pathValue === needle) score += 12;
+          if (pathValue.startsWith(needle)) score += 8;
+          if (pathValue.includes("/" + needle)) score += 6;
+          if (label === needle) score += 7;
+          if (label.includes(needle)) score += 5;
+          if (role.includes(needle)) score += 4;
+          if (directory.includes(needle)) score += 3;
+          if (pathValue.includes(needle)) score += 2;
+          if (score > 0) {
+            scored.push({ score, node });
+          }
+        }
+        scored.sort(
+          (a, b) =>
+            b.score - a.score ||
+            (b.node.data.importance || 0) - (a.node.data.importance || 0) ||
+            a.node.data.path.localeCompare(b.node.data.path)
+        );
+        return scored.map((item) => item.node);
       }
 
       function escapeHtml(value) {
@@ -1012,29 +1225,6 @@ export function getWebUiHtml(): string {
           messageView.appendText(text.slice(i, i + chunkSize));
           await sleep(delay);
         }
-      }
-
-      function renderPatchResponse(payload) {
-        if (!payload || !payload.preview) return;
-
-        const preview = payload.preview;
-        patchMetaEl.textContent =
-          "summary=" +
-          preview.summary +
-          " | added=" +
-          preview.addedLines +
-          " | removed=" +
-          preview.removedLines +
-          " | oldHash=" +
-          payload.oldHash +
-          " | newHash=" +
-          payload.newHash +
-          " | applied=" +
-          payload.applied;
-
-        diffHunkEl.textContent = preview.hunk || "(empty hunk)";
-        beforePreviewEl.textContent = payload.beforePreview || "";
-        afterPreviewEl.textContent = payload.afterPreview || "";
       }
 
       function applyGraphTransform() {
@@ -1316,10 +1506,18 @@ export function getWebUiHtml(): string {
           summary
         };
         selectedNodeId = null;
+        clickedTrail.length = 0;
+        tourState.paths = [];
+        tourState.index = -1;
         drawGraphHighlights(summary);
         drawGraph();
         fitGraphToViewport();
         renderTrailChips();
+        syncTourStatus();
+        setInspectorPlaceholder(
+          "Inspector: sélectionne un fichier",
+          "<p>Clique un fichier dans le graphe pour obtenir une explication pédagogique détaillée.</p>"
+        );
       }
 
       async function generateGraph() {
@@ -1447,28 +1645,36 @@ export function getWebUiHtml(): string {
         return currentGraphData.nodes.find((node) => node?.data?.path === filePath) || null;
       }
 
-      async function openNodeByPath(filePath) {
+      async function openNodeByPath(filePath, options = {}) {
         const node = findNodeByPath(filePath);
         if (!node) {
           setStatus("Fichier non present dans le graphe actuel: " + filePath, "err");
           return;
         }
-        await onNodeClick(node);
+        await onNodeClick(node, options);
       }
 
-      async function onNodeClick(node) {
+      async function onNodeClick(node, options = {}) {
         if (!state.sessionId) return;
+        const requestId = ++inspectorRequestId;
+        const centerInView = options.centerInView !== false;
         selectedNodeId = node.id;
         pushTrailPath(node.data.path);
         drawGraph();
+        if (centerInView) {
+          centerNodeInView(node);
+        }
 
-        const loadingMessage = appendChatMessage(
-          "assistant",
-          "",
-          "file explain | " + node.data.path,
-          "assistant"
+        const maybeTourIndex = tourState.paths.indexOf(node.data.path);
+        if (maybeTourIndex >= 0) {
+          tourState.index = maybeTourIndex;
+        }
+        syncTourStatus();
+
+        setInspectorPlaceholder(
+          node.data.path,
+          "<p>Analyse pédagogique en cours...</p><p class='subtle'>Fonctions, variables, imports/exports, risques et rôle dans le flow.</p>"
         );
-        loadingMessage.setLoading(true);
         const rootPath = graphRootPathEl.value.trim() || ".";
         const maxNodes = Number(graphMaxNodesEl.value || "180");
 
@@ -1488,52 +1694,68 @@ export function getWebUiHtml(): string {
           );
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error || "File explain failed");
+          if (requestId !== inspectorRequestId) {
+            return;
+          }
 
-          const exp = payload.explanation || {};
-          const interactions = Array.isArray(exp.interactions) ? exp.interactions.join("\\n- ") : "";
-          const keyFunctions = Array.isArray(exp.keyFunctions) ? exp.keyFunctions.join("\\n- ") : "";
-          const keyVariables = Array.isArray(exp.keyVariables) ? exp.keyVariables.join("\\n- ") : "";
-          const imports = Array.isArray(exp.imports) ? exp.imports.join("\\n- ") : "";
-          const exportsList = Array.isArray(exp.exports) ? exp.exports.join("\\n- ") : "";
-          const risks = Array.isArray(exp.risks) ? exp.risks.join("\\n- ") : "";
-          const explainText = [
-            "Pourquoi dans le flow:",
-            exp.whyInFlow || "",
-            "",
-            "Overview:",
-            exp.overview || "",
-            "",
-            "Utility in app:",
-            exp.utilityInApp || "",
-            "",
-            "Interactions:",
-            interactions ? "- " + interactions : "- (none)",
-            "",
-            "Key functions:",
-            keyFunctions ? "- " + keyFunctions : "- (none)",
-            "",
-            "Key variables:",
-            keyVariables ? "- " + keyVariables : "- (none)",
-            "",
-            "Imports:",
-            imports ? "- " + imports : "- (none)",
-            "",
-            "Exports:",
-            exportsList ? "- " + exportsList : "- (none)",
-            "",
-            "Risks:",
-            risks ? "- " + risks : "- (none)"
-          ].join("\\n");
-          loadingMessage.setMeta(
-            "file explain | " + payload.mode + " | confidence=" + (exp.confidence || "n/a")
-          );
-          loadingMessage.setLoading(false);
-          await streamText(loadingMessage, explainText);
+          renderInspectorContent(node, payload.explanation || {}, payload.mode || "heuristic");
+          setStatus("Analyse fichier mise a jour dans l'inspector.", "ok");
         } catch (error) {
-          loadingMessage.setLoading(false);
-          loadingMessage.setText("Erreur: " + (error.message || String(error)));
-          loadingMessage.setMeta("file explain | error");
+          if (requestId !== inspectorRequestId) {
+            return;
+          }
+          setInspectorPlaceholder(
+            node.data.path,
+            "<p>Erreur: " + escapeHtml(error.message || String(error)) + "</p>"
+          );
+          setStatus("Erreur analyse fichier: " + (error.message || String(error)), "err");
         }
+      }
+
+      async function runGraphSearch() {
+        const query = graphSearchInputEl?.value || "";
+        const matches = findSearchMatches(query);
+        if (matches.length === 0) {
+          setStatus("Aucun fichier ne correspond a la recherche.", "err");
+          return;
+        }
+
+        const paths = matches.slice(0, 10).map((node) => node.data.path);
+        tourState.paths = paths;
+        tourState.index = 0;
+        syncTourStatus();
+        await openNodeByPath(paths[0], { centerInView: true });
+        setStatus("Recherche: " + matches.length + " resultat(s), premier ouvert.", "ok");
+      }
+
+      async function startGuidedTour() {
+        const paths = buildGuidedTourPaths();
+        if (paths.length === 0) {
+          setStatus("Tour indisponible: genere d'abord un graphe avec des noeuds.", "err");
+          return;
+        }
+
+        tourState.paths = paths;
+        tourState.index = 0;
+        syncTourStatus();
+        await openNodeByPath(paths[0], { centerInView: true });
+        setStatus("Tour guide initialise.", "ok");
+      }
+
+      async function navigateTour(direction) {
+        if (tourState.paths.length === 0 || tourState.index < 0) {
+          setStatus("Tour inactif. Lance 'Start guided tour'.", "err");
+          return;
+        }
+        const nextIndex = tourState.index + direction;
+        if (nextIndex < 0 || nextIndex >= tourState.paths.length) {
+          setStatus("Fin de tour atteinte.", "ok");
+          syncTourStatus();
+          return;
+        }
+        tourState.index = nextIndex;
+        syncTourStatus();
+        await openNodeByPath(tourState.paths[tourState.index], { centerInView: true });
       }
 
       async function createSession() {
@@ -1558,7 +1780,6 @@ export function getWebUiHtml(): string {
           if (!response.ok) throw new Error(payload.error || "Session creation failed");
 
           state.sessionId = payload.id;
-          resetPatchPreview();
           resetGraphPanels();
           updateSessionState();
           setStatus("Session creee. Scan initial...", "");
@@ -1685,161 +1906,6 @@ export function getWebUiHtml(): string {
         }
       }
 
-      async function loadFile() {
-        if (!state.sessionId) {
-          setStatus("Cree une session avant de charger un fichier.", "err");
-          return;
-        }
-
-        const targetPath = patchPathEl.value.trim();
-        if (!targetPath) {
-          setStatus("Renseigne un path fichier.", "err");
-          return;
-        }
-
-        setStatus("Chargement fichier...", "");
-        loadFileBtn.disabled = true;
-        try {
-          const response = await fetch(
-            state.apiBase + "/api/sessions/" + state.sessionId + "/file/read",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ path: targetPath })
-            }
-          );
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || "File read failed");
-
-          patchContentEl.value = payload.content || "";
-          resetPatchPreview();
-          appendChatMessage(
-            "assistant",
-            "Fichier charge: " + targetPath + " (" + (payload.content?.length || 0) + " chars).",
-            "file-read",
-            "assistant"
-          );
-          setStatus("Fichier charge.", "ok");
-        } catch (error) {
-          appendChatMessage(
-            "assistant",
-            "Erreur load file: " + (error.message || String(error)),
-            "file-read | error",
-            "assistant"
-          );
-          setStatus("Erreur load file: " + (error.message || String(error)), "err");
-        } finally {
-          loadFileBtn.disabled = !state.sessionId;
-        }
-      }
-
-      async function previewPatch() {
-        if (!state.sessionId) {
-          setStatus("Cree une session avant le preview.", "err");
-          return;
-        }
-        const targetPath = patchPathEl.value.trim();
-        if (!targetPath) {
-          setStatus("Renseigne un path fichier.", "err");
-          return;
-        }
-
-        setStatus("Preview patch...", "");
-        previewPatchBtn.disabled = true;
-        try {
-          const response = await fetch(
-            state.apiBase + "/api/sessions/" + state.sessionId + "/apply_patch",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                path: targetPath,
-                newContent: patchContentEl.value,
-                apply: false
-              })
-            }
-          );
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || "Patch preview failed");
-
-          state.lastPatch = payload;
-          renderPatchResponse(payload);
-          applyPatchBtn.disabled = false;
-          appendChatMessage(
-            "assistant",
-            "Preview patch pret pour " +
-              targetPath +
-              " | +" +
-              payload.preview?.addedLines +
-              " / -" +
-              payload.preview?.removedLines,
-            "patch-preview",
-            "assistant"
-          );
-          setStatus("Preview genere.", "ok");
-        } catch (error) {
-          state.lastPatch = null;
-          applyPatchBtn.disabled = true;
-          appendChatMessage(
-            "assistant",
-            "Erreur preview patch: " + (error.message || String(error)),
-            "patch-preview | error",
-            "assistant"
-          );
-          setStatus("Erreur preview patch: " + (error.message || String(error)), "err");
-        } finally {
-          previewPatchBtn.disabled = !state.sessionId;
-        }
-      }
-
-      async function applyPatch() {
-        if (!state.sessionId) {
-          setStatus("Cree une session avant apply.", "err");
-          return;
-        }
-        if (!state.lastPatch) {
-          setStatus("Fais un preview avant apply.", "err");
-          return;
-        }
-        const targetPath = patchPathEl.value.trim();
-        if (!targetPath) {
-          setStatus("Renseigne un path fichier.", "err");
-          return;
-        }
-
-        const confirmed = window.confirm("Appliquer ce patch sur le fichier " + targetPath + " ?");
-        if (!confirmed) return;
-
-        setStatus("Application patch...", "");
-        applyPatchBtn.disabled = true;
-        try {
-          const response = await fetch(
-            state.apiBase + "/api/sessions/" + state.sessionId + "/apply_patch",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                path: targetPath,
-                newContent: patchContentEl.value,
-                expectedOldHash: state.lastPatch.oldHash,
-                apply: true
-              })
-            }
-          );
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || "Patch apply failed");
-
-          state.lastPatch = payload;
-          renderPatchResponse(payload);
-          appendChatMessage("system", "Patch applique sur " + targetPath, "patch", "assistant");
-          setStatus("Patch applique.", "ok");
-        } catch (error) {
-          setStatus("Erreur apply patch: " + (error.message || String(error)), "err");
-        } finally {
-          applyPatchBtn.disabled = !state.lastPatch;
-        }
-      }
-
       if (graphViewportEl) {
         graphViewportEl.addEventListener("wheel", (event) => {
           event.preventDefault();
@@ -1889,13 +1955,6 @@ export function getWebUiHtml(): string {
         fitGraphToViewport();
       });
 
-      resetGraphBtn?.addEventListener("click", () => {
-        graphView.x = 30;
-        graphView.y = 30;
-        graphView.scale = 0.9;
-        applyGraphTransform();
-      });
-
       clearTrailBtn?.addEventListener("click", () => {
         clickedTrail.length = 0;
         renderTrailChips();
@@ -1911,18 +1970,37 @@ export function getWebUiHtml(): string {
         drawGraph();
       });
 
+      searchGraphBtn?.addEventListener("click", async () => {
+        await runGraphSearch();
+      });
+
+      graphSearchInputEl?.addEventListener("keydown", async (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          await runGraphSearch();
+        }
+      });
+
+      tourStartBtn?.addEventListener("click", async () => {
+        await startGuidedTour();
+      });
+
+      tourPrevBtn?.addEventListener("click", async () => {
+        await navigateTour(-1);
+      });
+
+      tourNextBtn?.addEventListener("click", async () => {
+        await navigateTour(1);
+      });
+
       repoPathEl.value = state.repoPath;
       updateSessionState();
-      resetPatchPreview();
       resetGraphPanels();
       applyGraphTransform();
       renderTrailChips();
 
       createSessionBtn.addEventListener("click", createSession);
       sendBtn.addEventListener("click", sendMessage);
-      loadFileBtn.addEventListener("click", loadFile);
-      previewPatchBtn.addEventListener("click", previewPatch);
-      applyPatchBtn.addEventListener("click", applyPatch);
       generateGraphBtn.addEventListener("click", async () => {
         await generateGraph();
         await scanRepoOverview();
