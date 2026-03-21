@@ -1,0 +1,20 @@
+{
+  "name": "@repo-watcher/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@repo-watcher/core": "0.1.0",
+    "fastify": "^5.3.3",
+    "zod": "^3.24.3"
+  }
+}
