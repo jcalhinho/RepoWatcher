@@ -1,20 +1,41 @@
-# RepoWatcher - MVP local "type Jules"
+# RepoWatcher
 
-MVP oriente repo local:
-- ouvrir un repo en local
-- discuter avec une session
-- utiliser des commandes outillees pour lire/rechercher du code
-- executer uniquement des commandes de verification autorisees
-- mode agent LLM avec tool-calls controles (optionnel)
+Assistant local pour explorer rapidement un dépôt: structure, interactions entre fichiers, zones à risque, explications pédagogiques par clic, et chat outillé sécurisé.
+
+## Ce que fait l'application
+
+- Ouvre une session sur un repo local.
+- Lance un **scan de codebase** (fichiers + interactions) et construit un graphe interactif.
+- Affiche deux types de liens dans le graphe:
+  - **Imports** (dépendances techniques)
+  - **User flow** (parcours fonctionnel estimé)
+- Met en avant:
+  - fichiers clés
+  - zones de risque
+  - interactions importantes
+- Au clic sur un fichier, génère une explication IA orientée onboarding:
+  - rôle du fichier
+  - fonctions et variables importantes
+  - imports/exports
+  - utilité dans le flow global
+- Fournit un chat (streaming) avec outils contrôlés (`list/read/search/run`).
+- Propose une édition supervisée (`read`, preview diff, apply patch avec garde hash).
 
 ## Stack
 
-- Node.js + TypeScript (workspaces npm)
+- Monorepo npm workspaces
+- Node.js + TypeScript
 - API: Fastify
-- Core: outils securises pour repo local
-- Tests: Vitest
+- Validation: Vitest + TypeScript typecheck
 
-## Prerequis
+## Arborescence
+
+- `apps/api` : serveur HTTP + UI web
+- `apps/worker` : worker local (base pour exécution future)
+- `packages/core` : sécurité repo local, path guard, policy commandes
+- `docs` : blueprint/backlog
+
+## Prérequis
 
 - Node.js 20+
 - npm 10+
@@ -25,11 +46,12 @@ MVP oriente repo local:
 npm install
 ```
 
-## Validation
+## Vérification
 
 ```bash
 npm run typecheck
 npm run test
+npm run lint
 npm run build
 ```
 
@@ -39,22 +61,14 @@ npm run build
 npm run --workspace @repo-watcher/api dev
 ```
 
-API par defaut: `http://127.0.0.1:8787`
+- API: `http://127.0.0.1:8787`
+- UI: `http://127.0.0.1:8787/`
 
-UI web minimale: ouvre `http://127.0.0.1:8787/`
-- creation de session locale
-- chat manuel et mode agent
-- affichage des steps outils et de la reponse brute JSON
-- edition de fichier supervisee (load, preview diff, apply explicite)
-- schema clair de la structure fichiers + interactions (JSON React Flow)
-- graphe visuel interactif (pan/zoom + clic fichier)
-- auto-scan initial du repo apres creation de session
-- explication IA du fichier clique (role, interactions, utilite)
+## Variables d'environnement (mode agent LLM)
 
-## Activer le mode agent LLM (optionnel)
+Le mode manuel fonctionne sans clé LLM.
 
-Par defaut, l'API fonctionne en mode manuel (`/help`, `/list`, etc.).
-Pour activer le mode agent autonome sur messages naturels:
+Pour activer le mode agent:
 
 ```bash
 export LLM_API_KEY="<secret>"
@@ -63,161 +77,81 @@ export LLM_BASE_URL="https://api.openai.com/v1"
 npm run --workspace @repo-watcher/api dev
 ```
 
-Variables supportees:
-- `LLM_API_KEY` (obligatoire pour mode agent)
-- `LLM_MODEL` (defaut: `gpt-4.1-mini`)
-- `LLM_BASE_URL` (defaut: `https://api.openai.com/v1`)
-- `LLM_TIMEOUT_MS` (defaut: `30000`)
+Variables supportées:
 
-## Ouvrir une session sur un repo local
+- `LLM_API_KEY`
+- `LLM_MODEL` (défaut: `gpt-4.1-mini`)
+- `LLM_BASE_URL` (défaut: `https://api.openai.com/v1`)
+- `LLM_TIMEOUT_MS` (défaut: `30000`)
 
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions \
-  -H "content-type: application/json" \
-  -d '{"repoPath":"/chemin/vers/ton-repo-local"}'
-```
+## Endpoints principaux
 
-Reponse:
+### Santé
+
+- `GET /health`
+
+### Session
+
+- `POST /api/sessions`
 
 ```json
-{
-  "id": "uuid",
-  "repoPath": "/abs/path",
-  "createdAt": "..."
-}
+{ "repoPath": "/abs/path/to/repo" }
 ```
 
-## Envoyer un message
+### Chat
 
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions/<SESSION_ID>/chat \
-  -H "content-type: application/json" \
-  -d '{"message":"/help"}'
-```
+- `POST /api/sessions/:sessionId/chat`
+- `POST /api/sessions/:sessionId/chat/stream`
 
-Commandes supportees dans `message`:
+### Fichiers / patch
+
+- `POST /api/sessions/:sessionId/file/read`
+- `POST /api/sessions/:sessionId/apply_patch`
+
+### Graphe / intelligence repo
+
+- `POST /api/sessions/:sessionId/repo_graph`
+- `POST /api/sessions/:sessionId/repo_overview`
+- `POST /api/sessions/:sessionId/explain_file`
+
+## Commandes manuelles disponibles
+
 - `/help`
 - `/list [path]`
 - `/read <path>`
 - `/search <query>`
 - `/run <commande>`
 
-Message naturel (mode agent):
+## Politique sécurité commandes (`/run`)
 
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions/<SESSION_ID>/chat \
-  -H "content-type: application/json" \
-  -d '{"message":"analyse ce repo et dis-moi quels tests lancer en premier"}'
-```
+Allowlist stricte (deny-by-default):
 
-Raccourci UI:
-- `Ctrl+Enter` (ou `Cmd+Enter` sur macOS) pour envoyer le message.
+- `ls -la`
+- `npm test`
+- `npm run lint`
+- `npm run build`
+- `pnpm test|lint|build`
+- `yarn test|lint|build`
+- `cat <fichier_relatif>`
+- `head -n <1..500> <fichier_relatif>`
+- `tail -n <1..500> <fichier_relatif>`
+- pipeline de lecture sans shell (2-3 segments max):
+  - `head -n 400 fichier.ts | tail -n 50`
+  - `cat README.md | tail -n 20`
 
-## Endpoints edition supervisee
+Contraintes:
 
-Lire un fichier:
-
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions/<SESSION_ID>/file/read \
-  -H "content-type: application/json" \
-  -d '{"path":"README.md"}'
-```
-
-Preview patch (sans ecriture):
-
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions/<SESSION_ID>/apply_patch \
-  -H "content-type: application/json" \
-  -d '{"path":"README.md","newContent":"nouveau texte\\n","apply":false}'
-```
-
-Apply patch (avec garde hash):
-
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions/<SESSION_ID>/apply_patch \
-  -H "content-type: application/json" \
-  -d '{"path":"README.md","newContent":"nouveau texte\\n","expectedOldHash":"<oldHash>","apply":true}'
-```
-
-## Endpoint schema React Flow
-
-Genere un schema repo compatible React Flow (`nodes` + `edges`) :
-
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions/<SESSION_ID>/repo_graph \
-  -H "content-type: application/json" \
-  -d '{"rootPath":"frontend/src","maxNodes":180}'
-```
-
-Reponse:
-- `summary`: volume et couverture
-- `nodes`: fichiers (id, label, position)
-- `edges`: interactions detectees via imports locaux
-
-## Endpoint auto-scan du repo
-
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions/<SESSION_ID>/repo_overview \
-  -H "content-type: application/json" \
-  -d '{"rootPath":".","maxNodes":180}'
-```
-
-Retour:
-- `mode`: `llm` ou `heuristic`
-- `overview.overview`: synthese globale
-- `overview.directoryNotes`: lecture par dossiers
-- `overview.entryPoints`: points d'entree probables
-
-## Endpoint explication IA d'un fichier
-
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions/<SESSION_ID>/explain_file \
-  -H "content-type: application/json" \
-  -d '{"path":"frontend/src/main.ts","rootPath":"frontend/src","maxNodes":180}'
-```
-
-Retour:
-- `mode`: `llm` ou `heuristic`
-- `explanation.overview`
-- `explanation.utilityInApp`
-- `explanation.interactions`
-- `explanation.keyFunctions`
-- `explanation.risks`
-
-Exemple verification:
-
-```bash
-curl -s -X POST http://127.0.0.1:8787/api/sessions/<SESSION_ID>/chat \
-  -H "content-type: application/json" \
-  -d '{"message":"/run npm test"}'
-```
-
-## Securite MVP
-
-- path traversal bloque (acces limite au repo selectionne)
-- execution shell deny-by-default
-- allowlist stricte des commandes:
-  - `ls -la`
-  - `npm test`
-  - `npm run lint`
-  - `npm run build`
-  - `pnpm test|lint|build`
-  - `yarn test|lint|build`
-  - `cat <fichier_relatif>`
-  - `head -n <1..500> <fichier_relatif>`
-  - `tail -n <1..500> <fichier_relatif>`
-  - pipeline lecture sans shell: `cat|head|tail ... | head|tail ...` (2-3 segments max)
+- pas de chemins absolus
+- pas de `..`
+- pas de shell libre
 
 ## Limites actuelles
 
-- session stockee en memoire (pas de persistance DB)
-- patch base sur remplacement de contenu (pas encore de format unified patch)
-- pas encore d'integration git (branch/commit automatiques)
-- detection d'interactions basee surtout sur imports locaux (JS/TS/Python)
-- explications IA dependantes de la qualite du contexte scanne (`rootPath`, `maxNodes`)
+- Sessions en mémoire (pas de persistance DB)
+- Détection user-flow heuristique
+- Explications IA dépendantes du contexte scanné
+- Pas de workflow Git automatique (branch/commit)
 
-## Prochaine etape recommandee
+## Licence
 
-- brancher un orchestrateur de run persistant + DB (sessions/messages/runs)
-- ajouter UI chat + viewer de diff
-- integrer edition de code supervisee et workflow git (branche dediee)
+Ce projet est sous licence **MIT**. Voir [LICENSE](./LICENSE).

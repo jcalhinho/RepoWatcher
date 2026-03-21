@@ -1,6 +1,7 @@
 {
   "name": "repo-watcher-jules-local",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "workspaces": [
     "apps/*",

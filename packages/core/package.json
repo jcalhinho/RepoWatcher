@@ -13,5 +13,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "tsc -p tsconfig.json --noEmit"
-  }
+  },
+  "license": "MIT"
 }
