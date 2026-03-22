@@ -25,8 +25,8 @@ export interface LlmClient {
 
 const envSchema = z.object({
   LLM_API_KEY: z.string().min(1),
-  LLM_MODEL: z.string().min(1).default("gpt-4.1-mini"),
-  LLM_BASE_URL: z.string().url().default("https://api.openai.com/v1"),
+  LLM_MODEL: z.string().min(1),
+  LLM_BASE_URL: z.string().url(),
   LLM_TIMEOUT_MS: z
     .string()
     .optional()
@@ -43,7 +43,7 @@ const envSchema = z.object({
     })
 });
 
-type OpenAiChatResponse = {
+type ChatCompletionsResponse = {
   model?: string;
   usage?: {
     prompt_tokens?: number;
@@ -59,7 +59,7 @@ type OpenAiChatResponse = {
   }>;
 };
 
-class OpenAiCompatibleLlmClient implements LlmClient {
+class ChatCompletionsLlmClient implements LlmClient {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly baseUrl: string;
@@ -72,7 +72,7 @@ class OpenAiCompatibleLlmClient implements LlmClient {
     this.timeoutMs = timeoutMs;
   }
 
-  private extractUsage(payload: OpenAiChatResponse): LlmUsage | null {
+  private extractUsage(payload: ChatCompletionsResponse): LlmUsage | null {
     const inputFromPrompt = Number(payload.usage?.prompt_tokens ?? payload.usage?.input_tokens ?? 0);
     const outputFromCompletion = Number(payload.usage?.completion_tokens ?? payload.usage?.output_tokens ?? 0);
     let inputTokens = Number.isFinite(inputFromPrompt) && inputFromPrompt > 0 ? Math.round(inputFromPrompt) : 0;
@@ -140,7 +140,7 @@ class OpenAiCompatibleLlmClient implements LlmClient {
         throw new Error(`LLM request failed (${response.status}): ${details.slice(0, 400)}`);
       }
 
-      const payload = (await response.json()) as OpenAiChatResponse;
+      const payload = (await response.json()) as ChatCompletionsResponse;
       const content = payload.choices?.[0]?.message?.content;
       if (!content || typeof content !== "string") {
         throw new Error("LLM response missing message content");
@@ -162,7 +162,7 @@ export function createEnvLlmClient(): LlmClient | null {
     return null;
   }
 
-  return new OpenAiCompatibleLlmClient(
+  return new ChatCompletionsLlmClient(
     parsed.data.LLM_API_KEY,
     parsed.data.LLM_MODEL,
     parsed.data.LLM_BASE_URL,

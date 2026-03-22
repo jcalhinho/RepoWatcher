@@ -104,8 +104,8 @@ The goal of RepoWatcher is to **reduce codebase understanding time** (onboarding
 
 ### IA
 
-- Client **OpenAI-compatible Chat Completions**
-- Support de modèles tiers via `LLM_BASE_URL` (ex: Gemini proxy compatible)
+- Client **LLM compatible Chat Completions**
+- Support de providers tiers via `LLM_BASE_URL`
 
 ### Outils qualité
 
@@ -126,7 +126,7 @@ RepoWatcher/
 │   │   │   ├── repo-intelligence.ts   # Repo overview + file explain (heuristique + LLM)
 │   │   │   ├── agent-orchestrator.ts  # Agent outillé (list/read/search/run)
 │   │   │   ├── manual-commands.ts     # Commandes slash manuelles
-│   │   │   ├── llm-client.ts          # Client LLM OpenAI-compatible
+│   │   │   ├── llm-client.ts          # Client LLM compatible Chat Completions
 │   │   │   ├── patch-utils.ts         # Diff preview + hash
 │   │   │   └── web-ui.ts              # Service des assets UI
 │   │   ├── test/server.test.ts
@@ -248,16 +248,16 @@ npm run --workspace @repo-watcher/worker dev
 | Variable | Requis | Défaut | Description |
 |---|---|---|---|
 | `LLM_API_KEY` | oui (mode agent) | - | Clé API du provider |
-| `LLM_MODEL` | non | `gpt-4.1-mini` | Nom du modèle |
-| `LLM_BASE_URL` | non | `https://api.openai.com/v1` | Endpoint OpenAI-compatible |
+| `LLM_MODEL` | oui (mode agent) | - | Nom du modèle |
+| `LLM_BASE_URL` | oui (mode agent) | - | Endpoint compatible Chat Completions |
 | `LLM_TIMEOUT_MS` | non | `30000` | Timeout en ms |
 
 Exemple:
 
 ```bash
 export LLM_API_KEY="<secret>"
-export LLM_MODEL="gemini-2.5-pro"
-export LLM_BASE_URL="<openai-compatible-endpoint>"
+export LLM_MODEL="<model-name>"
+export LLM_BASE_URL="<chat-completions-endpoint>"
 export LLM_TIMEOUT_MS="30000"
 npm run --workspace @repo-watcher/api dev
 ```
@@ -454,7 +454,7 @@ npm run --workspace @repo-watcher/core build
 ### "Mode LLM non configuré"
 
 - Définir `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`.
-- Vérifier que l'endpoint est compatible OpenAI `/chat/completions`.
+- Vérifier que l'endpoint expose une API compatible `/chat/completions`.
 
 ### Session invalide
 

@@ -758,8 +758,8 @@ function App() {
             viewerClickNode: "Click a node to open file content.",
             viewerLoading: "Loading file...",
             viewerReadError: "File read error",
-            viewerRefresh: "Reload file",
-            viewerExplain: "Explain this file in chat",
+            viewerRefresh: "Reload",
+            viewerExplain: "Explain",
             viewerLinesLabel: "lines"
           }
         : {
@@ -869,8 +869,8 @@ function App() {
             viewerClickNode: "Clique un noeud pour ouvrir le contenu du fichier.",
             viewerLoading: "Chargement du fichier...",
             viewerReadError: "Erreur lecture fichier",
-            viewerRefresh: "Recharger fichier",
-            viewerExplain: "Expliquer ce fichier dans le chat",
+            viewerRefresh: "Relire",
+            viewerExplain: "Expliquer",
             viewerLinesLabel: "lignes"
           },
     [language]
@@ -1326,8 +1326,12 @@ function App() {
       const exp = payload.explanation || {};
       const normalizedStep = Number.isFinite(stepIndex) ? Math.max(0, stepIndex) : 0;
       const normalizedTotal = Number.isFinite(totalSteps) ? Math.max(1, totalSteps) : 1;
+      const headerLine =
+        source === "tour-step"
+          ? `${language === "en" ? "### Step" : "### Etape"} ${normalizedStep + 1}/${normalizedTotal} - ${node.data.label}`
+          : `${language === "en" ? "### File" : "### Fichier"} - ${node.data.label}`;
       const text = [
-        `${language === "en" ? "### Step" : "### Etape"} ${normalizedStep + 1}/${normalizedTotal} - ${node.data.label}`,
+        headerLine,
         `${language === "en" ? "File" : "Fichier"}: \`${node.data.path}\``,
         "",
         language === "en" ? "Why in the user flow:" : "Pourquoi dans le flow utilisateur:",
@@ -1522,22 +1526,16 @@ function App() {
 
   const explainSelectedFile = useCallback(async () => {
     if (!selectedNode) return;
-    const indexInTour = tourPaths.indexOf(selectedNode.id);
-    const orderedNodeIds =
-      indexInTour >= 0
-        ? tourPaths
-        : trail.length > 0
-          ? trail
-          : [selectedNode.id];
-    const stepIndex = indexInTour >= 0 ? indexInTour : Math.max(0, orderedNodeIds.length - 1);
+    const orderedNodeIds = trail.length > 0 ? trail : [selectedNode.id];
+    const stepIndex = Math.max(0, orderedNodeIds.length - 1);
     await explainNodeStep({
       nodeId: selectedNode.id,
       stepIndex,
-      totalSteps: Math.max(1, orderedNodeIds.length),
+      totalSteps: 1,
       orderedNodeIds,
       source: "explain-file"
     });
-  }, [selectedNode, tourPaths, trail, explainNodeStep]);
+  }, [selectedNode, trail, explainNodeStep]);
 
   const clearChat = useCallback(() => {
     setChatMessages([]);
