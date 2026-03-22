@@ -157,49 +157,120 @@ function collectMatches(content: string, pattern: RegExp): string[] {
 function collectCodeSignals(filePath: string, content: string): CodeSignals {
   const ext = extensionOf(filePath);
   const isPython = ext === ".py";
+  const isJvm = [".java", ".kt", ".kts", ".scala", ".groovy"].includes(ext);
+  const isGo = ext === ".go";
+  const isRust = ext === ".rs";
+  const isDotNet = [".cs", ".fs", ".vb"].includes(ext);
 
   const imports = isPython
     ? unique([
         ...collectMatches(content, /^\s*from\s+([a-zA-Z0-9_\.]+)\s+import\s+/gm),
         ...collectMatches(content, /^\s*import\s+([a-zA-Z0-9_\.]+)/gm)
       ]).slice(0, 12)
-    : unique([
-        ...collectMatches(content, /\bimport\s+(?:[^"']*from\s+)?["']([^"']+)["']/g),
-        ...collectMatches(content, /\brequire\(\s*["']([^"']+)["']\s*\)/g)
-      ]).slice(0, 12);
+    : isJvm
+      ? unique(collectMatches(content, /^\s*import\s+([a-zA-Z0-9_\.]+)(?:\.\*)?\s*;/gm)).slice(0, 12)
+      : isGo
+        ? unique([
+            ...collectMatches(
+              content,
+              /^\s*import\s+(?:[a-zA-Z_][a-zA-Z0-9_]*\s+)?["']([^"']+)["']/gm
+            ),
+            ...collectMatches(content, /^\s*["']([^"']+)["']\s*$/gm)
+          ]).slice(0, 12)
+        : isRust
+          ? unique([
+              ...collectMatches(content, /^\s*use\s+([a-zA-Z0-9_:]+)\s*;/gm),
+              ...collectMatches(content, /^\s*mod\s+([a-zA-Z0-9_]+)\s*;/gm)
+            ]).slice(0, 12)
+          : isDotNet
+            ? unique(collectMatches(content, /^\s*using\s+([a-zA-Z0-9_\.]+)\s*;/gm)).slice(0, 12)
+            : unique([
+                ...collectMatches(content, /\bimport\s+(?:[^"']*from\s+)?["']([^"']+)["']/g),
+                ...collectMatches(content, /\brequire\(\s*["']([^"']+)["']\s*\)/g),
+                ...collectMatches(content, /\b(?:include|include_once|require|require_once)\s*\(?\s*["']([^"']+)["']/g),
+                ...collectMatches(content, /\b(?:require_relative|require)\s+["']([^"']+)["']/g),
+                ...collectMatches(content, /^\s*#include\s+"([^"]+)"/gm)
+              ]).slice(0, 12);
 
   const exports = isPython
     ? unique(collectMatches(content, /^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm)).slice(0, 10)
-    : unique(
-        [
-          ...collectMatches(
-            content,
-            /\bexport\s+(?:async\s+)?(?:function|const|class)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g
-          ),
-          ...collectMatches(content, /\bmodule\.exports\.(\w+)/g)
-        ].filter(Boolean)
-      ).slice(0, 10);
+    : isJvm
+      ? unique([
+          ...collectMatches(content, /\bclass\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/g),
+          ...collectMatches(content, /\binterface\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/g),
+          ...collectMatches(content, /\benum\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/g)
+        ]).slice(0, 10)
+      : isGo
+        ? unique([
+            ...collectMatches(content, /^\s*func\s+([A-Z][a-zA-Z0-9_]*)\s*\(/gm),
+            ...collectMatches(content, /^\s*type\s+([A-Z][a-zA-Z0-9_]*)\s+/gm)
+          ]).slice(0, 10)
+        : isRust
+          ? unique([
+              ...collectMatches(content, /^\s*pub\s+fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm),
+              ...collectMatches(content, /^\s*pub\s+(?:struct|enum|trait)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/gm)
+            ]).slice(0, 10)
+          : unique(
+              [
+                ...collectMatches(
+                  content,
+                  /\bexport\s+(?:async\s+)?(?:function|const|class)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g
+                ),
+                ...collectMatches(content, /\bmodule\.exports\.(\w+)/g)
+              ].filter(Boolean)
+            ).slice(0, 10);
 
   const keyFunctions = isPython
     ? unique([
         ...collectMatches(content, /^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm),
         ...collectMatches(content, /^\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/gm)
       ]).slice(0, 12)
-    : unique([
-        ...collectMatches(content, /\b(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g),
-        ...collectMatches(
-          content,
-          /\b(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/g
-        ),
-        ...collectMatches(content, /\bclass\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g)
-      ]).slice(0, 12);
+    : isJvm
+      ? unique([
+          ...collectMatches(
+            content,
+            /\b(?:public|private|protected)?\s*(?:static\s+)?[a-zA-Z0-9_<>,\[\]\.?]+\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g
+          ),
+          ...collectMatches(content, /\bclass\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/g)
+        ]).slice(0, 12)
+      : isGo
+        ? unique([
+            ...collectMatches(content, /^\s*func\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm),
+            ...collectMatches(content, /^\s*type\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+/gm)
+          ]).slice(0, 12)
+        : isRust
+          ? unique([
+              ...collectMatches(content, /^\s*(?:pub\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm),
+              ...collectMatches(content, /^\s*(?:pub\s+)?(?:struct|enum|trait)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/gm)
+            ]).slice(0, 12)
+          : unique([
+              ...collectMatches(content, /\b(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g),
+              ...collectMatches(
+                content,
+                /\b(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/g
+              ),
+              ...collectMatches(content, /\bclass\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g),
+              ...collectMatches(content, /^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm),
+              ...collectMatches(content, /^\s*function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm),
+              ...collectMatches(content, /^\s*sub\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\{/gm),
+              ...collectMatches(content, /^\s*proc\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+/gm)
+            ]).slice(0, 12);
 
   const keyVariables = isPython
     ? unique(collectMatches(content, /^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=/gm)).slice(0, 12)
-    : unique(collectMatches(content, /\b(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g)).slice(
-        0,
-        12
-      );
+    : isGo
+      ? unique([
+          ...collectMatches(content, /^\s*var\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/gm),
+          ...collectMatches(content, /^\s*const\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/gm)
+        ]).slice(0, 12)
+      : isRust
+        ? unique([
+            ...collectMatches(content, /^\s*let\s+(?:mut\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\b/gm),
+            ...collectMatches(content, /^\s*const\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/gm)
+          ]).slice(0, 12)
+        : unique(
+            collectMatches(content, /\b(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g)
+          ).slice(0, 12);
 
   return {
     keyFunctions,
@@ -253,6 +324,18 @@ function heuristicFileExplain(
     utility = "Contient la logique metier ou l'integration avec des services externes.";
   } else if (ext === ".tsx" || ext === ".jsx") {
     utility = "Definit une vue/composant UI dans l'application frontend.";
+  } else if ([".java", ".kt", ".kts", ".scala", ".groovy"].includes(ext)) {
+    utility = "Participe au backend/service JVM (API, configuration, services, modeles).";
+  } else if ([".go", ".rs", ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".m", ".mm"].includes(ext)) {
+    utility = "Participe au coeur backend/systeme (services, performances, modules bas niveau).";
+  } else if ([".cs", ".fs", ".vb"].includes(ext)) {
+    utility = "Participe a un service/backend .NET (API, logique metier, integrations).";
+  } else if ([".php", ".rb", ".lua", ".pl", ".pm"].includes(ext)) {
+    utility = "Participe au backend/script applicatif (routes, jobs, services, utilitaires).";
+  } else if ([".swift", ".dart"].includes(ext)) {
+    utility = "Participe a l'application mobile (UI, logique client, services).";
+  } else if ([".sh", ".bash", ".zsh"].includes(ext)) {
+    utility = "Script d'automatisation/execution (build, deploy, maintenance, outillage).";
   } else if (ext === ".py") {
     utility = "Participe au backend Python (API, modele, services ou utilitaires).";
   }
@@ -321,31 +404,32 @@ export async function generateFileExplanation(
   }
 
   const systemPrompt = [
-    "Tu es un architecte logiciel.",
-    "Tu expliques un fichier dans son contexte applicatif pour onboarding rapide.",
-    "Tu donnes une explication pedagogique concise et actionnable.",
-    "Reponds UNIQUEMENT en JSON au format:",
+    "You are a senior software architect.",
+    "Explain the target file in its application context for fast onboarding across junior to senior developers.",
+    "Be pedagogical, concise, and actionable.",
+    "Respond ONLY in JSON with this shape:",
     '{"overview":"...","utilityInApp":"...","whyInFlow":"...","interactions":["..."],"keyFunctions":["..."],"keyVariables":["..."],"imports":["..."],"exports":["..."],"risks":["..."],"confidence":"low|medium|high"}',
-    "N'invente pas des dependances absentes.",
-    "Base-toi sur le contenu fourni, les interactions detectees et le parcours precedent."
+    "Do not invent dependencies or behavior.",
+    "Ground your answer in the provided content, detected interactions, and prior click trail.",
+    "All JSON string values must be written in French."
   ].join("\n");
 
   const userPrompt = [
-    `Fichier cible: ${filePath}`,
+    `Target file: ${filePath}`,
     "",
-    "Parcours precedent (ordre de clic):",
-    trailPaths.length > 0 ? trailPaths.join(" -> ") : "(aucun)",
+    "Previous exploration trail (click order):",
+    trailPaths.length > 0 ? trailPaths.join(" -> ") : "(none)",
     "",
-    "Interactions detectees:",
-    interactions.length > 0 ? interactions.join("\n") : "(aucune interaction detectee)",
+    "Detected interactions:",
+    interactions.length > 0 ? interactions.join("\n") : "(no detected interaction)",
     "",
-    "Signaux statiques:",
+    "Static signals:",
     `keyFunctions=${signals.keyFunctions.join(", ") || "(none)"}`,
     `keyVariables=${signals.keyVariables.join(", ") || "(none)"}`,
     `imports=${signals.imports.join(", ") || "(none)"}`,
     `exports=${signals.exports.join(", ") || "(none)"}`,
     "",
-    "Contenu fichier:",
+    "File content:",
     clamp(content, MAX_FILE_EXPLAIN_CHARS)
   ].join("\n");
 
@@ -372,11 +456,12 @@ export async function generateRepoOverview(
 
   const readme = await repository.readTextFile("README.md", MAX_README_CHARS).catch(() => "");
   const systemPrompt = [
-    "Tu es un tech lead en phase d'onboarding.",
-    "Tu fournis un briefing initial d'un repository.",
-    "Reponds UNIQUEMENT en JSON au format:",
+    "You are a tech lead preparing onboarding notes.",
+    "Produce an initial repository briefing that is clear for mixed experience levels.",
+    "Respond ONLY in JSON with this shape:",
     '{"overview":"...","directoryNotes":["..."],"entryPoints":["..."],"suggestedCommands":["..."]}',
-    "Sois factuel et pragmatique."
+    "Stay factual and pragmatic.",
+    "All JSON string values must be written in French."
   ].join("\n");
 
   const directoryList = fallback.directoryNotes.join("\n");

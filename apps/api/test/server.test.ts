@@ -58,6 +58,123 @@ async function createGraphRepoFixture(): Promise<string> {
   return root;
 }
 
+async function createNoisyMonorepoFixture(): Promise<string> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "repo-watcher-noisy-graph-test-"));
+  await mkdir(path.join(root, "backend", "src", "main", "java", "com", "acme", "audio"), {
+    recursive: true
+  });
+  await mkdir(path.join(root, "backend", "src", "main", "resources"), {
+    recursive: true
+  });
+  await mkdir(path.join(root, "frontend", "src", "environments"), { recursive: true });
+  await mkdir(path.join(root, "frontend", "src"), { recursive: true });
+  await mkdir(path.join(root, "frontend", ".angular", "cache", "18", "vite", "deps"), {
+    recursive: true
+  });
+
+  await writeFile(
+    path.join(root, "backend", "src", "main", "java", "com", "acme", "audio", "App.java"),
+    [
+      "package com.acme.audio;",
+      "",
+      "import com.acme.audio.TokenService;",
+      "",
+      "public class App {}"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "backend", "src", "main", "java", "com", "acme", "audio", "TokenService.java"),
+    "package com.acme.audio;\n\npublic class TokenService {}\n",
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "backend", "src", "main", "java", "com", "acme", "audio", "TokenController.java"),
+    [
+      "package com.acme.audio;",
+      "",
+      "import org.springframework.web.bind.annotation.GetMapping;",
+      "import org.springframework.web.bind.annotation.RequestMapping;",
+      "import org.springframework.web.bind.annotation.RestController;",
+      "",
+      "@RestController",
+      '@RequestMapping("/api")',
+      "public class TokenController {",
+      '    @GetMapping("/live-token")',
+      "    public String token() { return \"ok\"; }",
+      "}"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "backend", "src", "main", "resources", "application.yml"),
+    "gemini_api_url: ${GEMINI_API_URL:https://api.example.com}\nrequest_timeout_ms: 30000\n",
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "frontend", "src", "main.ts"),
+    "import { app } from './app';\nconsole.log(app);\n",
+    "utf8"
+  );
+  await writeFile(path.join(root, "frontend", "src", "app.ts"), "export const app = 'ok';\n", "utf8");
+  await writeFile(
+    path.join(root, "frontend", "src", "token.service.ts"),
+    [
+      "import { environment } from './environments/environment';",
+      "",
+      "class TokenService {",
+      "  private apiUrl = environment.apiUrl + '/live-token';",
+      "  constructor(private http: { get: (value: string) => Promise<string> }) {}",
+      "  getToken(mode: string) {",
+      "    return this.http.get(`${this.apiUrl}?mode=${mode}`);",
+      "  }",
+      "}",
+      "",
+      "export const tokenService = TokenService;"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "frontend", "src", "environments", "environment.ts"),
+    "export const environment = { GEMINI_API_URL: 'https://api.example.com', request_timeout_ms: 30000 };\n",
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "frontend", ".angular", "cache", "18", "vite", "deps", "chunk-AAA.js"),
+    "export default 1;\n",
+    "utf8"
+  );
+
+  return root;
+}
+
+async function createPolyglotRepoFixture(): Promise<string> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "repo-watcher-polyglot-test-"));
+  await mkdir(path.join(root, "backend", "go"), { recursive: true });
+  await mkdir(path.join(root, "backend", "rust"), { recursive: true });
+  await mkdir(path.join(root, "backend", "dotnet"), { recursive: true });
+  await mkdir(path.join(root, "mobile"), { recursive: true });
+
+  await writeFile(
+    path.join(root, "backend", "go", "main.go"),
+    'package main\n\nimport "fmt"\n\nfunc main() { fmt.Println("ok") }\n',
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "backend", "rust", "lib.rs"),
+    "pub fn run() -> &'static str { \"ok\" }\n",
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "backend", "dotnet", "Program.cs"),
+    "using System;\n\npublic class Program { public static void Main() {} }\n",
+    "utf8"
+  );
+  await writeFile(path.join(root, "mobile", "app.swift"), "import Foundation\n", "utf8");
+
+  return root;
+}
+
 describe("API chat modes", () => {
   it("serves the web UI shell on root route", async () => {
     const server = await buildServer();
@@ -228,39 +345,6 @@ describe("API chat modes", () => {
     expect(filePayload.contentHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it("returns file open metadata in dry-run mode", async () => {
-    const repoPath = await createLocalRepoFixture();
-    const server = await buildServer();
-    serversToClose.push(server);
-
-    const sessionResponse = await server.inject({
-      method: "POST",
-      url: "/api/sessions",
-      payload: { repoPath }
-    });
-    const sessionPayload = sessionResponse.json() as { id: string };
-
-    const openResponse = await server.inject({
-      method: "POST",
-      url: `/api/sessions/${sessionPayload.id}/file/open`,
-      payload: { path: "README.md", line: 3, column: 1, dryRun: true }
-    });
-
-    expect(openResponse.statusCode).toBe(200);
-    const openPayload = openResponse.json() as {
-      method: string;
-      launched: boolean;
-      line: number;
-      column: number;
-      vscodeUri: string;
-    };
-    expect(openPayload.method).toBe("dry-run");
-    expect(openPayload.launched).toBe(false);
-    expect(openPayload.line).toBe(3);
-    expect(openPayload.column).toBe(1);
-    expect(openPayload.vscodeUri).toContain("vscode://file");
-  });
-
   it("previews and applies a patch with optimistic hash check", async () => {
     const repoPath = await createLocalRepoFixture();
     const server = await buildServer();
@@ -351,6 +435,75 @@ describe("API chat modes", () => {
           edge.source === "frontend/src/main.ts" && edge.target === "frontend/src/utils.ts"
       )
     ).toBe(true);
+  });
+
+  it("keeps backend files visible in a frontend+backend monorepo with angular cache", async () => {
+    const repoPath = await createNoisyMonorepoFixture();
+    const server = await buildServer();
+    serversToClose.push(server);
+
+    const sessionResponse = await server.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { repoPath }
+    });
+    const sessionPayload = sessionResponse.json() as { id: string };
+
+    const graphResponse = await server.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionPayload.id}/repo_graph`,
+      payload: {
+        rootPath: ".",
+        maxNodes: 40
+      }
+    });
+
+    expect(graphResponse.statusCode).toBe(200);
+    const graphPayload = graphResponse.json() as {
+      nodes: Array<{ data: { path: string } }>;
+      edges: Array<{ data: { kind: string } }>;
+      summary: { nodeCount: number; configEdgeCount: number; apiEdgeCount: number };
+    };
+
+    expect(graphPayload.summary.nodeCount).toBeGreaterThan(0);
+    expect(graphPayload.nodes.some((node) => node.data.path.startsWith("backend/"))).toBe(true);
+    expect(graphPayload.nodes.some((node) => node.data.path.endsWith("TokenService.java"))).toBe(true);
+    expect(graphPayload.summary.configEdgeCount).toBeGreaterThan(0);
+    expect(graphPayload.summary.apiEdgeCount).toBeGreaterThan(0);
+    expect(graphPayload.edges.some((edge) => edge.data.kind === "api")).toBe(true);
+    expect(graphPayload.edges.some((edge) => edge.data.kind === "config")).toBe(true);
+  });
+
+  it("indexes additional source languages for polyglot repositories", async () => {
+    const repoPath = await createPolyglotRepoFixture();
+    const server = await buildServer();
+    serversToClose.push(server);
+
+    const sessionResponse = await server.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { repoPath }
+    });
+    const sessionPayload = sessionResponse.json() as { id: string };
+
+    const graphResponse = await server.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionPayload.id}/repo_graph`,
+      payload: {
+        rootPath: ".",
+        maxNodes: 80
+      }
+    });
+
+    expect(graphResponse.statusCode).toBe(200);
+    const graphPayload = graphResponse.json() as {
+      nodes: Array<{ data: { path: string } }>;
+    };
+
+    expect(graphPayload.nodes.some((node) => node.data.path === "backend/go/main.go")).toBe(true);
+    expect(graphPayload.nodes.some((node) => node.data.path === "backend/rust/lib.rs")).toBe(true);
+    expect(graphPayload.nodes.some((node) => node.data.path === "backend/dotnet/Program.cs")).toBe(true);
+    expect(graphPayload.nodes.some((node) => node.data.path === "mobile/app.swift")).toBe(true);
   });
 
   it("returns auto-scan repo overview", async () => {

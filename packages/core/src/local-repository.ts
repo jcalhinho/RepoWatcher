@@ -10,8 +10,12 @@ let rgAvailable: boolean | undefined;
 
 const IGNORED_DIRECTORY_NAMES = new Set([
   ".git",
+  ".angular",
+  ".cache",
   "node_modules",
   ".next",
+  ".nuxt",
+  ".svelte-kit",
   "dist",
   "build",
   "venv",

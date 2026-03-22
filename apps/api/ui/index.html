@@ -71,9 +71,11 @@
               </div>
               <div class="graph-switches">
                 <label><input id="toggleImportEdges" type="checkbox" checked />Imports</label>
+                <label><input id="toggleApiEdges" type="checkbox" checked />API links</label>
+                <label><input id="toggleConfigEdges" type="checkbox" checked />Config links</label>
                 <label><input id="toggleFlowEdges" type="checkbox" checked />User flow</label>
               </div>
-              <div class="graph-hint">Bleu = user flow • Gris = imports techniques</div>
+              <div class="graph-hint">Bleu = user flow • Gris = imports • Rose = appels API front->back • Orange = interactions config</div>
             </div>
             <div class="graph-search">
               <input id="graphSearchInput" type="text" placeholder="Rechercher un fichier (path, nom, role)" />
@@ -131,7 +133,7 @@
           <div class="chat-input">
             <label>
               Message
-              <textarea id="messageInput" placeholder="Ex: analyse ce repo et propose les checks a lancer"></textarea>
+              <textarea id="messageInput" placeholder="Ex: explique ce fichier, propose une amelioration precise, puis liste les bugs/risques potentiels"></textarea>
             </label>
             <div class="chat-actions">
               <button id="sendBtn" disabled>Envoyer</button>

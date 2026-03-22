@@ -309,12 +309,10 @@
         padding: 5px 9px;
         font-size: 0.78rem;
         cursor: pointer;
-        max-width: 100%;
-        overflow: visible;
-        text-overflow: clip;
-        white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        max-width: min(46ch, 100%);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
         flex: 0 1 auto;
         line-height: 1.25;
         text-align: left;

@@ -31,10 +31,18 @@ describe("LocalRepository", () => {
     await mkdir(path.join(root, "backend", "venv", "bin"), { recursive: true });
     await mkdir(path.join(root, "backend", "__pycache__"), { recursive: true });
     await mkdir(path.join(root, "backend", "app"), { recursive: true });
+    await mkdir(path.join(root, "frontend", ".angular", "cache", "18", "vite", "deps"), {
+      recursive: true
+    });
 
     await writeFile(path.join(root, "backend", "venv", "bin", "activate"), "source ...", "utf8");
     await writeFile(path.join(root, "backend", "__pycache__", "main.cpython-314.pyc"), "binary", "utf8");
     await writeFile(path.join(root, "backend", "app", "routes.py"), "print('ok')\n", "utf8");
+    await writeFile(
+      path.join(root, "frontend", ".angular", "cache", "18", "vite", "deps", "chunk-AAA.js"),
+      "export default 1;\n",
+      "utf8"
+    );
 
     const repo = await LocalRepository.open(root);
     const files = await repo.listFiles(".", 200);
@@ -42,5 +50,6 @@ describe("LocalRepository", () => {
     expect(files).toContain("backend/app/routes.py");
     expect(files.some((file) => file.includes("venv"))).toBe(false);
     expect(files.some((file) => file.includes("__pycache__"))).toBe(false);
+    expect(files.some((file) => file.includes(".angular"))).toBe(false);
   });
 });

@@ -5,7 +5,7 @@ const state = {
       };
 
       const graphView = { x: 30, y: 30, scale: 0.9 };
-      const graphFilters = { showImports: true, showFlow: true };
+      const graphFilters = { showImports: true, showApi: true, showFlow: true, showConfig: true };
       let currentGraphData = null;
       let selectedNodeId = null;
       let selectedFilePath = null;
@@ -38,6 +38,8 @@ const state = {
       const fitGraphBtn = document.getElementById("fitGraphBtn");
       const clearTrailBtn = document.getElementById("clearTrailBtn");
       const toggleImportEdgesEl = document.getElementById("toggleImportEdges");
+      const toggleApiEdgesEl = document.getElementById("toggleApiEdges");
+      const toggleConfigEdgesEl = document.getElementById("toggleConfigEdges");
       const toggleFlowEdgesEl = document.getElementById("toggleFlowEdges");
       const fileViewerPathEl = document.getElementById("fileViewerPath");
       const fileViewerMetaEl = document.getElementById("fileViewerMeta");
@@ -66,8 +68,12 @@ const state = {
         tourState.paths = [];
         tourState.index = -1;
         graphFilters.showImports = true;
+        graphFilters.showApi = true;
+        graphFilters.showConfig = true;
         graphFilters.showFlow = true;
         if (toggleImportEdgesEl) toggleImportEdgesEl.checked = true;
+        if (toggleApiEdgesEl) toggleApiEdgesEl.checked = true;
+        if (toggleConfigEdgesEl) toggleConfigEdgesEl.checked = true;
         if (toggleFlowEdgesEl) toggleFlowEdgesEl.checked = true;
         graphSummaryEl.textContent = "";
         if (graphKeyFilesEl) graphKeyFilesEl.innerHTML = "";
@@ -98,7 +104,8 @@ const state = {
           chip.type = "button";
           chip.className = "chip-btn";
           chip.dataset.filePath = filePath;
-          chip.textContent = filePath;
+          chip.title = filePath;
+          chip.textContent = formatChipPath(filePath);
           graphTrailEl.appendChild(chip);
         }
       }
@@ -570,6 +577,15 @@ const state = {
         return value.slice(0, left) + "…" + value.slice(-right);
       }
 
+      function formatChipPath(filePath) {
+        const value = String(filePath || "");
+        const parts = value.split("/").filter(Boolean);
+        if (parts.length <= 3) {
+          return value;
+        }
+        return parts[0] + "/.../" + parts.slice(-2).join("/");
+      }
+
       function edgePathForNodes(source, target) {
         const nodeWidth = 236;
         const nodeHeight = 56;
@@ -660,6 +676,10 @@ const state = {
             (summary.directories || 0) +
             "</div><div><strong>Imports:</strong> " +
             (summary.importEdgeCount || 0) +
+            " • <strong>API links:</strong> " +
+            (summary.apiEdgeCount || 0) +
+            " • <strong>Config links:</strong> " +
+            (summary.configEdgeCount || 0) +
             " • <strong>User flow:</strong> " +
             (summary.flowEdgeCount || 0) +
             "</div>";
@@ -679,7 +699,8 @@ const state = {
               chip.type = "button";
               chip.className = "chip-btn";
               chip.dataset.filePath = filePath;
-              chip.textContent = filePath;
+              chip.title = filePath;
+              chip.textContent = formatChipPath(filePath);
               graphKeyFilesEl.appendChild(chip);
             }
           }
@@ -702,7 +723,8 @@ const state = {
               const riskLevel = node?.data?.riskLevel || "medium";
               chip.className = "chip-btn risk-" + riskLevel;
               chip.dataset.filePath = filePath;
-              chip.textContent = filePath;
+              chip.title = filePath;
+              chip.textContent = formatChipPath(filePath);
               graphRiskFilesEl.appendChild(chip);
             }
           }
@@ -724,10 +746,16 @@ const state = {
           if (edge?.data?.kind === "flow") {
             return graphFilters.showFlow;
           }
+          if (edge?.data?.kind === "api") {
+            return graphFilters.showApi;
+          }
+          if (edge?.data?.kind === "config") {
+            return graphFilters.showConfig;
+          }
           return graphFilters.showImports;
         });
 
-        for (const edge of visibleEdges.filter((item) => item?.data?.kind !== "flow")) {
+        for (const edge of visibleEdges.filter((item) => item?.data?.kind === "import")) {
           const source = nodesById.get(edge.source);
           const target = nodesById.get(edge.target);
           if (!source || !target) continue;
@@ -740,6 +768,36 @@ const state = {
           importPath.setAttribute("stroke-dasharray", "5 5");
           importPath.setAttribute("opacity", "0.72");
           graphLayerEl.appendChild(importPath);
+        }
+
+        for (const edge of visibleEdges.filter((item) => item?.data?.kind === "config")) {
+          const source = nodesById.get(edge.source);
+          const target = nodesById.get(edge.target);
+          if (!source || !target) continue;
+
+          const configPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          configPath.setAttribute("d", edgePathForNodes(source, target));
+          configPath.setAttribute("fill", "none");
+          configPath.setAttribute("stroke", "#f59e0b");
+          configPath.setAttribute("stroke-width", "2");
+          configPath.setAttribute("stroke-dasharray", "2 6");
+          configPath.setAttribute("opacity", "0.84");
+          graphLayerEl.appendChild(configPath);
+        }
+
+        for (const edge of visibleEdges.filter((item) => item?.data?.kind === "api")) {
+          const source = nodesById.get(edge.source);
+          const target = nodesById.get(edge.target);
+          if (!source || !target) continue;
+
+          const apiPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          apiPath.setAttribute("d", edgePathForNodes(source, target));
+          apiPath.setAttribute("fill", "none");
+          apiPath.setAttribute("stroke", "#ec4899");
+          apiPath.setAttribute("stroke-width", "2.2");
+          apiPath.setAttribute("stroke-dasharray", "7 4");
+          apiPath.setAttribute("opacity", "0.86");
+          graphLayerEl.appendChild(apiPath);
         }
 
         for (const edge of visibleEdges.filter((item) => item?.data?.kind === "flow")) {
@@ -886,7 +944,11 @@ const state = {
               (payload.summary?.nodeCount || 0) +
               " noeuds, " +
               (payload.summary?.importEdgeCount || 0) +
-              " liens d'import et " +
+              " liens d'import, " +
+              (payload.summary?.apiEdgeCount || 0) +
+              " liens API, " +
+              (payload.summary?.configEdgeCount || 0) +
+              " liens config et " +
               (payload.summary?.flowEdgeCount || 0) +
               " liens user-flow.",
             "repo-graph",
@@ -975,37 +1037,6 @@ const state = {
         return currentGraphData.nodes.find((node) => node?.data?.path === filePath) || null;
       }
 
-      async function requestOpenFile(filePath, line = 1, column = 1) {
-        if (!state.sessionId) return;
-        try {
-          const response = await fetch(
-            state.apiBase + "/api/sessions/" + state.sessionId + "/file/open",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ path: filePath, line, column })
-            }
-          );
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || "File open failed");
-
-          if (payload.launched) {
-            setStatus("Fichier ouvert: " + filePath + " (" + payload.method + ")", "ok");
-            return;
-          }
-
-          setStatus(
-            "Ouverture auto indisponible (" +
-              (payload.method || "uri-only") +
-              "): " +
-              (payload.details || "configure monitor.js ou code CLI."),
-            "err"
-          );
-        } catch (error) {
-          setStatus("Erreur ouverture fichier: " + (error.message || String(error)), "err");
-        }
-      }
-
       async function requestFileContent(filePath) {
         if (!state.sessionId) {
           throw new Error("Session absente");
@@ -1038,7 +1069,6 @@ const state = {
         if (!state.sessionId) return;
         const requestId = ++nodeRequestId;
         const centerInView = options.centerInView !== false;
-        const openEditor = options.openEditor !== false;
         selectedNodeId = node.id;
         selectedFilePath = node.data.path;
         updateSessionState();
@@ -1059,9 +1089,6 @@ const state = {
           "Chargement du fichier...",
           "Lecture du contenu en cours..."
         );
-        if (openEditor) {
-          void requestOpenFile(node.data.path, 1, 1);
-        }
 
         const filePromise = requestFileContent(node.data.path);
         void filePromise
@@ -1161,7 +1188,7 @@ const state = {
         tourState.paths = paths;
         tourState.index = 0;
         syncTourStatus();
-        await openNodeByPath(paths[0], { centerInView: true, openEditor: false });
+        await openNodeByPath(paths[0], { centerInView: true });
         setStatus("Recherche: " + matches.length + " resultat(s), premier ouvert.", "ok");
       }
 
@@ -1175,7 +1202,7 @@ const state = {
         tourState.paths = paths;
         tourState.index = 0;
         syncTourStatus();
-        await openNodeByPath(paths[0], { centerInView: true, openEditor: false });
+        await openNodeByPath(paths[0], { centerInView: true });
         setStatus("Tour guide initialise.", "ok");
       }
 
@@ -1192,7 +1219,7 @@ const state = {
         }
         tourState.index = nextIndex;
         syncTourStatus();
-        await openNodeByPath(tourState.paths[tourState.index], { centerInView: true, openEditor: false });
+        await openNodeByPath(tourState.paths[tourState.index], { centerInView: true });
       }
 
       async function createSession() {
@@ -1399,6 +1426,16 @@ const state = {
 
       toggleImportEdgesEl?.addEventListener("change", () => {
         graphFilters.showImports = Boolean(toggleImportEdgesEl.checked);
+        drawGraph();
+      });
+
+      toggleApiEdgesEl?.addEventListener("change", () => {
+        graphFilters.showApi = Boolean(toggleApiEdgesEl.checked);
+        drawGraph();
+      });
+
+      toggleConfigEdgesEl?.addEventListener("change", () => {
+        graphFilters.showConfig = Boolean(toggleConfigEdgesEl.checked);
         drawGraph();
       });
 

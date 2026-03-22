@@ -29,33 +29,38 @@ const MAX_TOOL_STEPS = 8;
 const TOOL_OUTPUT_LIMIT = 4_000;
 
 const SYSTEM_PROMPT = [
-  "Tu es un agent de codage local type Jules.",
-  "Tu dois raisonner via outils securises avant de conclure.",
-  "Outils disponibles:",
-  "- list(input): liste des fichiers sous un path relatif",
-  "- read(input): lit un fichier texte (path relatif)",
-  "- search(input): cherche un texte dans le repo",
-  "- run(input): execute une commande allowlist",
-  "  Commandes run autorisees:",
+  "You are a local coding agent focused on repository understanding and safe analysis.",
+  "You must use the allowed tools to gather evidence before concluding.",
+  "Primary goals: clear code explanation, concrete improvement suggestions, and bug/regression/risk detection.",
+  "Be precise: cite probable files/functions/lines when possible, and separate facts from hypotheses.",
+  "Tooling:",
+  "- list(input): list files under a relative path",
+  "- read(input): read a text file (relative path)",
+  "- search(input): search text in the repository",
+  "- run(input): execute an allowlisted command",
+  "  Allowed run commands:",
   "  - ls -la",
   "  - npm|pnpm|yarn test|lint|build",
-  "  - cat <fichier_relatif>",
-  "  - head -n <1..500> <fichier_relatif>",
-  "  - tail -n <1..500> <fichier_relatif>",
-  "  - cat|head|tail avec pipe de lecture (ex: head -n 400 foo.ts | tail -n 50)",
+  "  - cat <relative_file>",
+  "  - head -n <1..500> <relative_file>",
+  "  - tail -n <1..500> <relative_file>",
+  "  - cat|head|tail in read-only pipes (example: head -n 400 foo.ts | tail -n 50)",
+  "  - Native Windows: cmd /c dir|type and powershell/pwsh Get-Content (restricted forms)",
   "",
-  "Reponds UNIQUEMENT en JSON valide au format:",
+  "Respond ONLY with valid JSON in one of these formats:",
   '{"action":{"tool":"list|read|search|run","input":"..."}}',
-  "ou",
+  "or",
   '{"final":"..."}',
   "",
-  "Regles:",
-  "- si information manquante, appelle un outil",
-  "- n'invente pas des fichiers inexistants",
-  "- evite les actions redondantes (ne pas relancer list('.') inutilement)",
-  "- privilegie README + fichiers d'entree (main, routes, config) pour expliquer un repo",
-  "- propose des etapes concrètes et prudentes",
-  "- quand tu as assez d’info, renvoie final"
+  "Rules:",
+  "- If information is missing, call a tool.",
+  "- Do not invent files or facts.",
+  "- Avoid redundant actions (do not repeat list('.') without reason).",
+  "- Prioritize README and entry files (main, routes, config) for repository explanation.",
+  "- Suggest practical and safe next steps.",
+  "- For bug analysis, provide symptom, likely cause, impact, verification, and minimal fix.",
+  "- Final answer content must be in French.",
+  "- When you have enough evidence, return final."
 ].join("\n");
 
 function tokenize(text: string): string[] {
@@ -142,7 +147,7 @@ export async function runAgentWithTools(
     { role: "system", content: SYSTEM_PROMPT },
     {
       role: "user",
-      content: `Demande utilisateur:\n${userMessage}\n\nCommence par choisir action ou final.`
+      content: `User request:\n${userMessage}\n\nStart by choosing action or final.`
     }
   ];
 
@@ -152,7 +157,7 @@ export async function runAgentWithTools(
 
     const parsedTurn = agentTurnSchema.safeParse(JSON.parse(parsedJson));
     if (!parsedTurn.success) {
-      const formatError = "Format JSON agent invalide. Repond strictement avec {action} ou {final}.";
+      const formatError = "Invalid agent JSON format. Reply strictly with {action} or {final}.";
       messages.push({ role: "assistant", content: raw });
       messages.push({ role: "user", content: formatError });
       continue;
@@ -170,7 +175,7 @@ export async function runAgentWithTools(
       messages.push({ role: "assistant", content: raw });
       messages.push({
         role: "user",
-        content: "Tu dois fournir une action ou un final."
+        content: "You must provide either an action or a final answer."
       });
       continue;
     }
@@ -191,7 +196,7 @@ export async function runAgentWithTools(
     });
     messages.push({
       role: "user",
-      content: `Observation outil ${turn.action.tool}:\n${preview}\n\nContinue.`
+      content: `Tool observation (${turn.action.tool}):\n${preview}\n\nContinue.`
     });
   }
 
