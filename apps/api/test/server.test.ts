@@ -193,6 +193,39 @@ describe("API chat modes", () => {
     expect(filePayload.contentHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it("returns file open metadata in dry-run mode", async () => {
+    const repoPath = await createLocalRepoFixture();
+    const server = await buildServer();
+    serversToClose.push(server);
+
+    const sessionResponse = await server.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { repoPath }
+    });
+    const sessionPayload = sessionResponse.json() as { id: string };
+
+    const openResponse = await server.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionPayload.id}/file/open`,
+      payload: { path: "README.md", line: 3, column: 1, dryRun: true }
+    });
+
+    expect(openResponse.statusCode).toBe(200);
+    const openPayload = openResponse.json() as {
+      method: string;
+      launched: boolean;
+      line: number;
+      column: number;
+      vscodeUri: string;
+    };
+    expect(openPayload.method).toBe("dry-run");
+    expect(openPayload.launched).toBe(false);
+    expect(openPayload.line).toBe(3);
+    expect(openPayload.column).toBe(1);
+    expect(openPayload.vscodeUri).toContain("vscode://file");
+  });
+
   it("previews and applies a patch with optimistic hash check", async () => {
     const repoPath = await createLocalRepoFixture();
     const server = await buildServer();

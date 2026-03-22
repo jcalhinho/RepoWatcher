@@ -7,6 +7,7 @@ import { z } from "zod";
 import { runAgentWithTools } from "./agent-orchestrator.js";
 import { createEnvLlmClient, type LlmClient } from "./llm-client.js";
 import { isManualCommand, runManualCommand } from "./manual-commands.js";
+import { openFileInEditor } from "./file-opener.js";
 import { buildPatchPreview, hashContent } from "./patch-utils.js";
 import { generateFileExplanation, generateRepoOverview } from "./repo-intelligence.js";
 import { buildRepoGraph } from "./repo-graph.js";
@@ -34,6 +35,13 @@ const sessionIdParamsSchema = z.object({
 
 const fileReadSchema = z.object({
   path: z.string().min(1).max(500)
+});
+
+const fileOpenSchema = z.object({
+  path: z.string().min(1).max(500),
+  line: z.number().int().min(1).max(1_000_000).optional().default(1),
+  column: z.number().int().min(1).max(1_000_000).optional().default(1),
+  dryRun: z.boolean().optional().default(false)
 });
 
 const applyPatchSchema = z.object({
@@ -312,6 +320,49 @@ export async function buildServer(options: BuildServerOptions = {}) {
     } catch (error) {
       return reply.status(400).send({
         error: "Cannot read file",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  fastify.post("/api/sessions/:sessionId/file/open", async (request, reply) => {
+    const params = sessionIdParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({
+        error: "Invalid session ID"
+      });
+    }
+
+    const body = fileOpenSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        error: "Invalid request body",
+        details: body.error.flatten()
+      });
+    }
+
+    const session = sessionStore.get(params.data.sessionId);
+    if (!session) {
+      return reply.status(404).send({
+        error: "Session not found"
+      });
+    }
+
+    try {
+      const openResult = await openFileInEditor(session.repoPath, body.data.path, {
+        line: body.data.line,
+        column: body.data.column,
+        dryRun: body.data.dryRun
+      });
+
+      return {
+        sessionId: session.id,
+        path: body.data.path,
+        ...openResult
+      };
+    } catch (error) {
+      return reply.status(400).send({
+        error: "Cannot open file",
         details: error instanceof Error ? error.message : "Unknown error"
       });
     }

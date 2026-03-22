@@ -40,15 +40,18 @@ export function getWebUiHtml(): string {
       }
 
       .workspace {
-        height: 100vh;
+        min-height: 100vh;
+        height: auto;
         padding: 14px;
         display: grid;
         gap: 14px;
-        grid-template-columns: minmax(520px, 1.4fr) minmax(360px, 1fr);
+        grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr);
+        overflow-x: hidden;
       }
 
       .column {
         min-height: 0;
+        min-width: 0;
       }
 
       .left-column {
@@ -56,14 +59,16 @@ export function getWebUiHtml(): string {
         grid-template-rows: auto 1fr;
         gap: 12px;
         min-height: 0;
+        min-width: 0;
       }
 
       .left-scroll {
-        min-height: 0;
-        overflow: auto;
+        min-height: auto;
+        overflow-x: hidden;
+        overflow-y: visible;
         display: grid;
         gap: 12px;
-        padding-right: 4px;
+        padding-right: 0;
       }
 
       .card {
@@ -73,6 +78,8 @@ export function getWebUiHtml(): string {
         padding: 12px;
         color: var(--text);
         box-shadow: 0 14px 35px rgba(2, 6, 23, 0.22);
+        min-width: 0;
+        max-width: 100%;
       }
 
       .title {
@@ -90,6 +97,7 @@ export function getWebUiHtml(): string {
       .row {
         display: grid;
         gap: 10px;
+        min-width: 0;
       }
 
       .row.two {
@@ -104,6 +112,7 @@ export function getWebUiHtml(): string {
         display: grid;
         gap: 10px;
         grid-template-columns: 1fr 1fr;
+        min-width: 0;
       }
 
       label {
@@ -156,6 +165,7 @@ export function getWebUiHtml(): string {
       .status {
         margin-top: 4px;
         font-size: 0.9rem;
+        overflow-wrap: anywhere;
       }
 
       .status.ok {
@@ -171,6 +181,8 @@ export function getWebUiHtml(): string {
         gap: 6px;
         color: var(--muted);
         font-size: 0.84rem;
+        min-width: 0;
+        overflow-wrap: anywhere;
       }
 
       .code-box {
@@ -223,6 +235,7 @@ export function getWebUiHtml(): string {
         justify-content: space-between;
         gap: 10px;
         flex-wrap: wrap;
+        min-width: 0;
       }
 
       .graph-controls {
@@ -240,68 +253,12 @@ export function getWebUiHtml(): string {
         font-size: 0.8rem;
       }
 
-      .graph-main {
-        margin-top: 10px;
-        display: grid;
-        gap: 10px;
-        grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
-        min-height: 0;
-      }
-
-      .graph-inspector {
-        border: 2px solid #64748b;
-        border-radius: 12px;
-        background: #f8fafc;
-        padding: 10px;
-        display: grid;
-        grid-template-rows: auto auto 1fr;
-        gap: 8px;
-        min-height: 450px;
-      }
-
-      .graph-inspector .inspector-title {
-        margin: 0;
-        font-size: 0.92rem;
-        color: #0f172a;
-      }
-
-      .graph-inspector .inspector-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-
-      .graph-inspector .inspector-chip {
-        border-radius: 999px;
-        border: 1px solid #94a3b8;
-        background: #ffffff;
-        color: #0f172a;
-        font-size: 0.74rem;
-        padding: 3px 8px;
-      }
-
-      .graph-inspector .inspector-chip.risk-high {
-        border-color: #dc2626;
-        background: #fef2f2;
-        color: #991b1b;
-      }
-
-      .graph-inspector .inspector-chip.risk-medium {
-        border-color: #d97706;
-        background: #fffbeb;
-        color: #92400e;
-      }
-
-      .graph-inspector .inspector-body {
-        min-height: 0;
-        overflow: auto;
-      }
-
       .graph-search {
         margin-top: 8px;
         display: grid;
-        grid-template-columns: minmax(160px, 1fr) auto auto auto;
+        grid-template-columns: minmax(0, 1fr) auto auto auto;
         gap: 8px;
+        min-width: 0;
       }
 
       .graph-search input {
@@ -335,6 +292,7 @@ export function getWebUiHtml(): string {
         margin-top: 8px;
         display: grid;
         gap: 8px;
+        min-width: 0;
       }
 
       .chip-title {
@@ -345,7 +303,11 @@ export function getWebUiHtml(): string {
       .chip-list {
         display: flex;
         gap: 6px;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 2px;
       }
 
       .chip-btn {
@@ -356,6 +318,11 @@ export function getWebUiHtml(): string {
         padding: 5px 9px;
         font-size: 0.78rem;
         cursor: pointer;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 0 0 auto;
       }
 
       .chip-btn.risk-high {
@@ -370,12 +337,105 @@ export function getWebUiHtml(): string {
         color: #92400e;
       }
 
+      .file-viewer-shell {
+        margin-top: 10px;
+        border: 2px solid #334155;
+        border-radius: 12px;
+        background: #0f172a;
+        color: #e2e8f0;
+        overflow: hidden;
+      }
+
+      .file-viewer-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        background: #111827;
+        border-bottom: 1px solid #334155;
+      }
+
+      .file-viewer-head > div {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+
+      .file-viewer-path {
+        margin: 0;
+        font-size: 0.84rem;
+        font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+        color: #93c5fd;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-viewer-meta {
+        margin-top: 2px;
+        font-size: 0.74rem;
+        color: #94a3b8;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-viewer-body {
+        max-height: 360px;
+        overflow: auto;
+      }
+
+      .file-viewer-empty {
+        padding: 12px;
+        font-size: 0.82rem;
+        color: #94a3b8;
+      }
+
+      .file-lines {
+        font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+        font-size: 0.8rem;
+      }
+
+      .file-line {
+        display: grid;
+        grid-template-columns: 54px 1fr;
+      }
+
+      .file-line:hover {
+        background: #172033;
+      }
+
+      .file-gutter {
+        user-select: none;
+        text-align: right;
+        padding: 0 10px 0 0;
+        color: #64748b;
+        border-right: 1px solid #1e293b;
+        background: #111827;
+        white-space: pre;
+      }
+
+      .file-code {
+        display: block;
+        padding: 0 12px;
+        white-space: pre;
+        color: #e2e8f0;
+      }
+
+      .file-truncated {
+        padding: 8px 12px;
+        border-top: 1px dashed #334155;
+        color: #fbbf24;
+        font-size: 0.76rem;
+      }
+
       .right-column {
         min-height: 0;
+        min-width: 0;
       }
 
       .chat-shell {
-        height: 100%;
+        min-height: 420px;
         display: grid;
         grid-template-rows: auto 1fr auto;
         gap: 10px;
@@ -553,7 +613,6 @@ export function getWebUiHtml(): string {
         .row.two,
         .row.graph-config,
         .split,
-        .graph-main,
         .graph-search {
           grid-template-columns: 1fr;
         }
@@ -638,38 +697,43 @@ export function getWebUiHtml(): string {
               <button id="tourPrevBtn" class="secondary" type="button" disabled>Tour prev</button>
               <button id="tourNextBtn" class="secondary" type="button" disabled>Tour next</button>
             </div>
-            <div class="graph-main">
-              <div>
-                <div id="graphViewport" class="graph-viewport">
-                  <svg id="graphSvg" viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid meet">
-                    <defs>
-                      <linearGradient id="edge-flow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stop-color="#1d4ed8" />
-                        <stop offset="100%" stop-color="#0ea5e9" />
-                      </linearGradient>
-                      <marker
-                        id="edge-flow-arrow"
-                        viewBox="0 0 10 10"
-                        refX="8"
-                        refY="5"
-                        markerWidth="7"
-                        markerHeight="7"
-                        orient="auto"
-                      >
-                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#0ea5e9" />
-                      </marker>
-                    </defs>
-                    <g id="graphLayer"></g>
-                  </svg>
-                </div>
+            <div style="margin-top: 10px;">
+              <div id="graphViewport" class="graph-viewport">
+                <svg id="graphSvg" viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <linearGradient id="edge-flow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#1d4ed8" />
+                      <stop offset="100%" stop-color="#0ea5e9" />
+                    </linearGradient>
+                    <marker
+                      id="edge-flow-arrow"
+                      viewBox="0 0 10 10"
+                      refX="8"
+                      refY="5"
+                      markerWidth="7"
+                      markerHeight="7"
+                      orient="auto"
+                    >
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0ea5e9" />
+                    </marker>
+                  </defs>
+                  <g id="graphLayer"></g>
+                </svg>
               </div>
-              <aside class="graph-inspector">
-                <h3 id="inspectorTitle" class="inspector-title">Inspector: sélectionne un fichier</h3>
-                <div id="inspectorMeta" class="inspector-meta"></div>
-                <div id="inspectorBody" class="inspector-body md-body">
-                  <p>Le panneau affiche ici l'explication pédagogique, les fonctions clés, variables, imports/exports et risques.</p>
+            </div>
+            <div class="file-viewer-shell">
+              <div class="file-viewer-head">
+                <div>
+                  <div id="fileViewerPath" class="file-viewer-path">Aucun fichier sélectionné</div>
+                  <div id="fileViewerMeta" class="file-viewer-meta">Clique un fichier dans le graphe pour afficher son code.</div>
                 </div>
-              </aside>
+                <button id="explainFileBtn" class="secondary" type="button" disabled>
+                  Expliquer ce fichier
+                </button>
+              </div>
+              <div id="fileViewerBody" class="file-viewer-body">
+                <div class="file-viewer-empty">Le visualiseur affichera ici le contenu du fichier avec numéros de ligne.</div>
+              </div>
             </div>
             <div class="graph-toolbar">
               <div class="graph-controls">
@@ -712,10 +776,12 @@ export function getWebUiHtml(): string {
       const graphFilters = { showImports: true, showFlow: true };
       let currentGraphData = null;
       let selectedNodeId = null;
+      let selectedFilePath = null;
       const clickedTrail = [];
       const tourState = { paths: [], index: -1 };
       let dragState = null;
-      let inspectorRequestId = 0;
+      let nodeRequestId = 0;
+      let explainRequestId = 0;
 
       const repoPathEl = document.getElementById("repoPath");
       const createSessionBtn = document.getElementById("createSessionBtn");
@@ -741,9 +807,10 @@ export function getWebUiHtml(): string {
       const clearTrailBtn = document.getElementById("clearTrailBtn");
       const toggleImportEdgesEl = document.getElementById("toggleImportEdges");
       const toggleFlowEdgesEl = document.getElementById("toggleFlowEdges");
-      const inspectorTitleEl = document.getElementById("inspectorTitle");
-      const inspectorMetaEl = document.getElementById("inspectorMeta");
-      const inspectorBodyEl = document.getElementById("inspectorBody");
+      const fileViewerPathEl = document.getElementById("fileViewerPath");
+      const fileViewerMetaEl = document.getElementById("fileViewerMeta");
+      const fileViewerBodyEl = document.getElementById("fileViewerBody");
+      const explainFileBtn = document.getElementById("explainFileBtn");
       const tourStartBtn = document.getElementById("tourStartBtn");
       const tourPrevBtn = document.getElementById("tourPrevBtn");
       const tourNextBtn = document.getElementById("tourNextBtn");
@@ -762,6 +829,7 @@ export function getWebUiHtml(): string {
       function resetGraphPanels() {
         currentGraphData = null;
         selectedNodeId = null;
+        selectedFilePath = null;
         clickedTrail.length = 0;
         tourState.paths = [];
         tourState.index = -1;
@@ -775,9 +843,10 @@ export function getWebUiHtml(): string {
         if (graphTrailEl) graphTrailEl.innerHTML = "";
         if (graphLayerEl) graphLayerEl.innerHTML = "";
         syncTourStatus();
-        setInspectorPlaceholder(
-          "Inspector: sélectionne un fichier",
-          "<p>Le panneau affiche ici l'explication pédagogique, les fonctions clés, variables, imports/exports et risques.</p>"
+        setFileViewerPlaceholder(
+          "Aucun fichier sélectionné",
+          "Clique un fichier dans le graphe pour afficher son code.",
+          "Le visualiseur affichera ici le contenu du fichier avec numéros de ligne."
         );
       }
 
@@ -821,6 +890,7 @@ export function getWebUiHtml(): string {
         sessionIdEl.textContent = state.sessionId || "-";
         sendBtn.disabled = !hasSession;
         generateGraphBtn.disabled = !hasSession;
+        if (explainFileBtn) explainFileBtn.disabled = !hasSession || !selectedFilePath;
         if (tourStartBtn) tourStartBtn.disabled = !hasSession;
         if (searchGraphBtn) searchGraphBtn.disabled = !hasSession;
       }
@@ -850,18 +920,6 @@ export function getWebUiHtml(): string {
           truncateMiddle(currentPath, 58);
       }
 
-      function setInspectorPlaceholder(title, contentHtml) {
-        if (inspectorTitleEl) {
-          inspectorTitleEl.textContent = title;
-        }
-        if (inspectorMetaEl) {
-          inspectorMetaEl.innerHTML = "";
-        }
-        if (inspectorBodyEl) {
-          inspectorBodyEl.innerHTML = contentHtml;
-        }
-      }
-
       function centerNodeInView(node) {
         if (!node || !graphViewportEl) return;
         const nodeWidth = 236;
@@ -873,31 +931,71 @@ export function getWebUiHtml(): string {
         applyGraphTransform();
       }
 
-      function renderInspectorContent(node, exp, mode) {
-        if (inspectorTitleEl) {
-          inspectorTitleEl.textContent = node.data.path;
+      function setFileViewerPlaceholder(pathLabel, metaLabel, message) {
+        if (fileViewerPathEl) {
+          fileViewerPathEl.textContent = pathLabel;
         }
-        if (inspectorMetaEl) {
-          inspectorMetaEl.innerHTML = "";
-          const addChip = (label, className) => {
-            const chip = document.createElement("span");
-            chip.className = "inspector-chip" + (className ? " " + className : "");
-            chip.textContent = label;
-            inspectorMetaEl.appendChild(chip);
-          };
-          addChip("role: " + (node.data.role || "module"), "");
-          addChip("risk: " + (node.data.riskLevel || "low"), "risk-" + (node.data.riskLevel || "low"));
-          addChip("importance: " + String(node.data.importance ?? 0), "");
-          if (exp?.confidence) addChip("confidence: " + exp.confidence, "");
-          if (mode) addChip("mode: " + mode, "");
+        if (fileViewerMetaEl) {
+          fileViewerMetaEl.textContent = metaLabel;
         }
+        if (fileViewerBodyEl) {
+          fileViewerBodyEl.innerHTML = '<div class="file-viewer-empty">' + escapeHtml(message) + "</div>";
+        }
+      }
+
+      function renderFileViewerContent(filePath, content) {
+        if (fileViewerPathEl) {
+          fileViewerPathEl.textContent = filePath;
+        }
+
+        const normalizedContent = String(content || "").replaceAll("\\r\\n", "\\n");
+        const allLines = normalizedContent.split("\\n");
+        const maxRenderedLines = 2200;
+        const lines = allLines.slice(0, maxRenderedLines);
+        const truncated = allLines.length > lines.length;
+
+        if (fileViewerMetaEl) {
+          fileViewerMetaEl.textContent =
+            lines.length + " ligne(s)" + (truncated ? " • affichage tronqué" : "");
+        }
+
+        if (!fileViewerBodyEl) {
+          return;
+        }
+
+        const htmlRows = lines
+          .map((line, index) => {
+            const safeLine = line.length > 0 ? escapeHtml(line) : "&nbsp;";
+            return (
+              '<div class="file-line">' +
+              '<span class="file-gutter">' +
+              String(index + 1) +
+              "</span>" +
+              '<span class="file-code">' +
+              safeLine +
+              "</span>" +
+              "</div>"
+            );
+          })
+          .join("");
+
+        const truncatedHint = truncated
+          ? '<div class="file-truncated">Affichage limité aux ' +
+            String(maxRenderedLines) +
+            " premières lignes.</div>"
+          : "";
+
+        fileViewerBodyEl.innerHTML = '<div class="file-lines">' + htmlRows + truncatedHint + "</div>";
+      }
+
+      function buildExplainText(exp) {
         const interactions = Array.isArray(exp?.interactions) ? exp.interactions.join("\\n- ") : "";
         const keyFunctions = Array.isArray(exp?.keyFunctions) ? exp.keyFunctions.join("\\n- ") : "";
         const keyVariables = Array.isArray(exp?.keyVariables) ? exp.keyVariables.join("\\n- ") : "";
         const imports = Array.isArray(exp?.imports) ? exp.imports.join("\\n- ") : "";
         const exportsList = Array.isArray(exp?.exports) ? exp.exports.join("\\n- ") : "";
         const risks = Array.isArray(exp?.risks) ? exp.risks.join("\\n- ") : "";
-        const explainText = [
+        return [
           "Pourquoi dans le flow:",
           exp?.whyInFlow || "",
           "",
@@ -925,9 +1023,6 @@ export function getWebUiHtml(): string {
           "Risks:",
           risks ? "- " + risks : "- (none)"
         ].join("\\n");
-        if (inspectorBodyEl) {
-          inspectorBodyEl.innerHTML = renderMarkdown(explainText);
-        }
       }
 
       function buildGuidedTourPaths() {
@@ -1513,10 +1608,13 @@ export function getWebUiHtml(): string {
         drawGraph();
         fitGraphToViewport();
         renderTrailChips();
+        selectedFilePath = null;
+        updateSessionState();
         syncTourStatus();
-        setInspectorPlaceholder(
-          "Inspector: sélectionne un fichier",
-          "<p>Clique un fichier dans le graphe pour obtenir une explication pédagogique détaillée.</p>"
+        setFileViewerPlaceholder(
+          "Aucun fichier sélectionné",
+          "Clique un fichier dans le graphe pour afficher son code.",
+          "Le visualiseur affichera ici le contenu du fichier avec numéros de ligne."
         );
       }
 
@@ -1645,6 +1743,56 @@ export function getWebUiHtml(): string {
         return currentGraphData.nodes.find((node) => node?.data?.path === filePath) || null;
       }
 
+      async function requestOpenFile(filePath, line = 1, column = 1) {
+        if (!state.sessionId) return;
+        try {
+          const response = await fetch(
+            state.apiBase + "/api/sessions/" + state.sessionId + "/file/open",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ path: filePath, line, column })
+            }
+          );
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "File open failed");
+
+          if (payload.launched) {
+            setStatus("Fichier ouvert: " + filePath + " (" + payload.method + ")", "ok");
+            return;
+          }
+
+          setStatus(
+            "Ouverture auto indisponible (" +
+              (payload.method || "uri-only") +
+              "): " +
+              (payload.details || "configure monitor.js ou code CLI."),
+            "err"
+          );
+        } catch (error) {
+          setStatus("Erreur ouverture fichier: " + (error.message || String(error)), "err");
+        }
+      }
+
+      async function requestFileContent(filePath) {
+        if (!state.sessionId) {
+          throw new Error("Session absente");
+        }
+        const response = await fetch(
+          state.apiBase + "/api/sessions/" + state.sessionId + "/file/read",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ path: filePath })
+          }
+        );
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "File read failed");
+        }
+        return payload;
+      }
+
       async function openNodeByPath(filePath, options = {}) {
         const node = findNodeByPath(filePath);
         if (!node) {
@@ -1656,9 +1804,12 @@ export function getWebUiHtml(): string {
 
       async function onNodeClick(node, options = {}) {
         if (!state.sessionId) return;
-        const requestId = ++inspectorRequestId;
+        const requestId = ++nodeRequestId;
         const centerInView = options.centerInView !== false;
+        const openEditor = options.openEditor !== false;
         selectedNodeId = node.id;
+        selectedFilePath = node.data.path;
+        updateSessionState();
         pushTrailPath(node.data.path);
         drawGraph();
         if (centerInView) {
@@ -1671,10 +1822,53 @@ export function getWebUiHtml(): string {
         }
         syncTourStatus();
 
-        setInspectorPlaceholder(
+        setFileViewerPlaceholder(
           node.data.path,
-          "<p>Analyse pédagogique en cours...</p><p class='subtle'>Fonctions, variables, imports/exports, risques et rôle dans le flow.</p>"
+          "Chargement du fichier...",
+          "Lecture du contenu en cours..."
         );
+        if (openEditor) {
+          void requestOpenFile(node.data.path, 1, 1);
+        }
+
+        const filePromise = requestFileContent(node.data.path);
+        void filePromise
+          .then((payload) => {
+            if (requestId !== nodeRequestId) return;
+            renderFileViewerContent(node.data.path, payload.content || "");
+          })
+          .catch((error) => {
+            if (requestId !== nodeRequestId) return;
+            setFileViewerPlaceholder(
+              node.data.path,
+              "Erreur lecture fichier",
+              "Erreur: " + (error?.message || String(error))
+            );
+          });
+      }
+
+      async function explainSelectedFile() {
+        if (!state.sessionId) {
+          setStatus("Cree une session avant de demander une explication.", "err");
+          return;
+        }
+        if (!selectedFilePath) {
+          setStatus("Selectionne un fichier dans le graphe avant l'explication.", "err");
+          return;
+        }
+
+        const filePath = selectedFilePath;
+        const requestId = ++explainRequestId;
+        if (explainFileBtn) explainFileBtn.disabled = true;
+
+        const explainMsg = appendChatMessage(
+          "assistant",
+          "",
+          "file explain | " + filePath,
+          "assistant"
+        );
+        explainMsg.setLoading(true);
+
         const rootPath = graphRootPathEl.value.trim() || ".";
         const maxNodes = Number(graphMaxNodesEl.value || "180");
 
@@ -1685,7 +1879,7 @@ export function getWebUiHtml(): string {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
-                path: node.data.path,
+                path: filePath,
                 rootPath,
                 maxNodes,
                 trailPaths: clickedTrail.slice(0, Math.max(0, clickedTrail.length - 1))
@@ -1694,21 +1888,32 @@ export function getWebUiHtml(): string {
           );
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error || "File explain failed");
-          if (requestId !== inspectorRequestId) {
-            return;
-          }
 
-          renderInspectorContent(node, payload.explanation || {}, payload.mode || "heuristic");
-          setStatus("Analyse fichier mise a jour dans l'inspector.", "ok");
-        } catch (error) {
-          if (requestId !== inspectorRequestId) {
+          if (requestId !== explainRequestId) {
+            explainMsg.setLoading(false);
+            explainMsg.setMeta("file explain | stale");
+            explainMsg.setText("Analyse interrompue (nouvelle demande).");
             return;
           }
-          setInspectorPlaceholder(
-            node.data.path,
-            "<p>Erreur: " + escapeHtml(error.message || String(error)) + "</p>"
+          explainMsg.setMeta(
+            "file explain | " + payload.mode + " | confidence=" + (payload.explanation?.confidence || "n/a")
           );
-          setStatus("Erreur analyse fichier: " + (error.message || String(error)), "err");
+          explainMsg.setLoading(false);
+          explainMsg.setText(buildExplainText(payload.explanation || {}));
+          setStatus("Analyse fichier ajoutée au chat.", "ok");
+        } catch (error) {
+          if (requestId !== explainRequestId) {
+            explainMsg.setLoading(false);
+            explainMsg.setMeta("file explain | stale");
+            explainMsg.setText("Analyse interrompue (nouvelle demande).");
+            return;
+          }
+          explainMsg.setLoading(false);
+          explainMsg.setMeta("file explain | error");
+          explainMsg.setText("Erreur analyse fichier: " + (error?.message || String(error)));
+          setStatus("Erreur analyse fichier: " + (error?.message || String(error)), "err");
+        } finally {
+          updateSessionState();
         }
       }
 
@@ -1724,7 +1929,7 @@ export function getWebUiHtml(): string {
         tourState.paths = paths;
         tourState.index = 0;
         syncTourStatus();
-        await openNodeByPath(paths[0], { centerInView: true });
+        await openNodeByPath(paths[0], { centerInView: true, openEditor: false });
         setStatus("Recherche: " + matches.length + " resultat(s), premier ouvert.", "ok");
       }
 
@@ -1738,7 +1943,7 @@ export function getWebUiHtml(): string {
         tourState.paths = paths;
         tourState.index = 0;
         syncTourStatus();
-        await openNodeByPath(paths[0], { centerInView: true });
+        await openNodeByPath(paths[0], { centerInView: true, openEditor: false });
         setStatus("Tour guide initialise.", "ok");
       }
 
@@ -1755,7 +1960,7 @@ export function getWebUiHtml(): string {
         }
         tourState.index = nextIndex;
         syncTourStatus();
-        await openNodeByPath(tourState.paths[tourState.index], { centerInView: true });
+        await openNodeByPath(tourState.paths[tourState.index], { centerInView: true, openEditor: false });
       }
 
       async function createSession() {
@@ -1991,6 +2196,9 @@ export function getWebUiHtml(): string {
 
       tourNextBtn?.addEventListener("click", async () => {
         await navigateTour(1);
+      });
+      explainFileBtn?.addEventListener("click", async () => {
+        await explainSelectedFile();
       });
 
       repoPathEl.value = state.repoPath;
