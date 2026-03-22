@@ -11,7 +11,7 @@ import { openFileInEditor } from "./file-opener.js";
 import { buildPatchPreview, hashContent } from "./patch-utils.js";
 import { generateFileExplanation, generateRepoOverview } from "./repo-intelligence.js";
 import { buildRepoGraph } from "./repo-graph.js";
-import { getWebUiHtml } from "./web-ui.js";
+import { getWebUiAsset, getWebUiHtml } from "./web-ui.js";
 
 type SessionRecord = {
   id: string;
@@ -31,6 +31,10 @@ const chatSchema = z.object({
 
 const sessionIdParamsSchema = z.object({
   sessionId: z.string().uuid()
+});
+
+const uiAssetParamsSchema = z.object({
+  asset: z.string().min(1).max(40)
 });
 
 const fileReadSchema = z.object({
@@ -134,6 +138,21 @@ export async function buildServer(options: BuildServerOptions = {}) {
   fastify.get("/", async (_request, reply) => {
     reply.type("text/html; charset=utf-8");
     return getWebUiHtml();
+  });
+
+  fastify.get("/ui/:asset", async (request, reply) => {
+    const params = uiAssetParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid UI asset path" });
+    }
+
+    const asset = getWebUiAsset(params.data.asset);
+    if (!asset) {
+      return reply.status(404).send({ error: "UI asset not found" });
+    }
+
+    reply.type(asset.contentType);
+    return asset.content;
   });
 
   fastify.get("/health", async () => ({ status: "ok" }));

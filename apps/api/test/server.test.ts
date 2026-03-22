@@ -73,6 +73,41 @@ describe("API chat modes", () => {
     expect(response.body).toContain("RepoWatcher Local UI");
   });
 
+  it("serves UI assets as standalone files", async () => {
+    const server = await buildServer();
+    serversToClose.push(server);
+
+    const cssResponse = await server.inject({
+      method: "GET",
+      url: "/ui/app.css"
+    });
+    const jsResponse = await server.inject({
+      method: "GET",
+      url: "/ui/app.js"
+    });
+
+    expect(cssResponse.statusCode).toBe(200);
+    expect(cssResponse.headers["content-type"]).toContain("text/css");
+    expect(cssResponse.body).toContain(".workspace");
+
+    expect(jsResponse.statusCode).toBe(200);
+    expect(jsResponse.headers["content-type"]).toContain("text/javascript");
+    expect(jsResponse.body).toContain("const state =");
+  });
+
+  it("rejects unknown UI assets", async () => {
+    const server = await buildServer();
+    serversToClose.push(server);
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/ui/unknown.js"
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: "UI asset not found" });
+  });
+
   it("returns manual mode for slash commands", async () => {
     const repoPath = await createLocalRepoFixture();
     const server = await buildServer();
