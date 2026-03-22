@@ -150,8 +150,50 @@ function isSafeReadPipelineCommand(command: Command): boolean {
   return true;
 }
 
+function isPowerShellBinary(token: string): boolean {
+  return token === "powershell" || token === "pwsh";
+}
+
+function isSafeWindowsReadCommand(command: Command): boolean {
+  if (command.length >= 3 && command[0] === "cmd" && command[1] === "/c") {
+    if (command.length === 3 && command[2] === "dir") {
+      return true;
+    }
+    if (command.length === 4 && command[2] === "dir") {
+      return isSafeRelativePathToken(command[3]);
+    }
+    if (command.length === 4 && command[2] === "type") {
+      return isSafeRelativePathToken(command[3]);
+    }
+  }
+
+  if (
+    command.length >= 6 &&
+    isPowerShellBinary(command[0]) &&
+    command[1] === "-NoProfile" &&
+    command[2] === "-Command" &&
+    command[3] === "Get-Content" &&
+    command[4] === "-Path" &&
+    isSafeRelativePathToken(command[5])
+  ) {
+    if (command.length === 6) {
+      return true;
+    }
+
+    if (
+      command.length === 8 &&
+      (command[6] === "-TotalCount" || command[6] === "-Tail") &&
+      isSafeLineCountToken(command[7])
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function createDefaultCommandPolicy(): CommandPolicy {
-  return new RuleBasedCommandPolicy([
+  const rules: CommandRule[] = [
     ["ls", "-la"],
     ["npm", "test"],
     ["npm", "run", "lint"],
@@ -164,7 +206,23 @@ export function createDefaultCommandPolicy(): CommandPolicy {
     ["yarn", "build"],
     isSafeReadCommand,
     isSafeReadPipelineCommand
-  ]);
+  ];
+
+  if (process.platform === "win32") {
+    rules.push(isSafeWindowsReadCommand);
+  }
+
+  return new RuleBasedCommandPolicy(rules);
+}
+
+function resolveWindowsExecutable(binary: string): string {
+  if (process.platform !== "win32") {
+    return binary;
+  }
+  if (binary === "npm" || binary === "pnpm" || binary === "yarn" || binary === "code") {
+    return `${binary}.cmd`;
+  }
+  return binary;
 }
 
 async function spawnCommand(
@@ -174,7 +232,7 @@ async function spawnCommand(
   stdinContent?: string
 ): Promise<CommandResult> {
   return new Promise<CommandResult>((resolve, reject) => {
-    const child = spawn(command[0], command.slice(1), {
+    const child = spawn(resolveWindowsExecutable(command[0]), command.slice(1), {
       cwd: repoRoot,
       shell: false,
       env: process.env

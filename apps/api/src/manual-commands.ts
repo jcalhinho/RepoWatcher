@@ -34,7 +34,9 @@ export async function runManualCommand(
       "- /list src",
       "- /read package.json",
       "- /search TODO",
-      "- /run npm test"
+      "- /run npm test",
+      "- /run cmd /c dir (Windows)",
+      "- /run powershell -NoProfile -Command Get-Content -Path README.md (Windows)"
     ].join("\n");
   }
 

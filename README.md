@@ -138,6 +138,13 @@ Allowlist stricte (deny-by-default):
 - pipeline de lecture sans shell (2-3 segments max):
   - `head -n 400 fichier.ts | tail -n 50`
   - `cat README.md | tail -n 20`
+- commandes de lecture Windows (sans WSL, uniquement sous Windows):
+  - `cmd /c dir`
+  - `cmd /c dir docs`
+  - `cmd /c type README.md`
+  - `powershell -NoProfile -Command Get-Content -Path README.md`
+  - `powershell -NoProfile -Command Get-Content -Path README.md -Tail 20`
+  - `powershell -NoProfile -Command Get-Content -Path README.md -TotalCount 20`
 
 Contraintes:
 

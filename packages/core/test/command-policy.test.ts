@@ -25,6 +25,7 @@ describe("ExactCommandPolicy", () => {
 describe("createDefaultCommandPolicy", () => {
   it("allows core verification commands and blocks others", () => {
     const policy = createDefaultCommandPolicy();
+    const isWindows = process.platform === "win32";
 
     expect(policy.isAllowed(["ls", "-la"])).toBe(true);
     expect(policy.isAllowed(["npm", "test"])).toBe(true);
@@ -42,6 +43,23 @@ describe("createDefaultCommandPolicy", () => {
     expect(policy.isAllowed(["cat", "/etc/passwd"])).toBe(false);
     expect(policy.isAllowed(["head", "-n", "20", "README.md", "|", "grep", "todo"])).toBe(false);
     expect(policy.isAllowed(["bash", "-lc", "rm -rf /"])).toBe(false);
+
+    expect(policy.isAllowed(["cmd", "/c", "dir"])).toBe(isWindows);
+    expect(policy.isAllowed(["cmd", "/c", "dir", "docs"])).toBe(isWindows);
+    expect(policy.isAllowed(["cmd", "/c", "type", "README.md"])).toBe(isWindows);
+    expect(
+      policy.isAllowed([
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        "Get-Content",
+        "-Path",
+        "README.md",
+        "-Tail",
+        "20"
+      ])
+    ).toBe(isWindows);
+    expect(policy.isAllowed(["cmd", "/c", "type", "../secret.txt"])).toBe(false);
   });
 
   it("runs safe read pipelines without shell", async () => {

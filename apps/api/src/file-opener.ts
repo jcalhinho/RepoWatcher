@@ -33,6 +33,10 @@ function toVscodeUri(absolutePath: string, line: number, column: number): string
   return `vscode://file${encoded}:${line}:${column}`;
 }
 
+function preferredCodeCliBinary(): string {
+  return process.platform === "win32" ? "code.cmd" : "code";
+}
+
 async function exists(filePath: string): Promise<boolean> {
   try {
     await access(filePath, fsConstants.F_OK);
@@ -99,7 +103,7 @@ export async function openFileInEditor(
 
   const gotoTarget = `${absolutePath}:${line}:${column}`;
   try {
-    await execFileAsync("code", ["-g", gotoTarget], {
+    await execFileAsync(preferredCodeCliBinary(), ["-g", gotoTarget], {
       cwd: repoRoot,
       timeout: 4_000
     });
@@ -114,6 +118,33 @@ export async function openFileInEditor(
     };
   } catch (error) {
     commandErrors.push(`code-cli: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+
+  if (process.platform === "win32") {
+    try {
+      await execFileAsync(
+        "cmd",
+        ["/c", "start", "", vscodeUri],
+        {
+          cwd: repoRoot,
+          timeout: 4_000,
+          windowsHide: true
+        }
+      );
+      return {
+        absolutePath,
+        vscodeUri,
+        line,
+        column,
+        launched: true,
+        method: "open-vscode-app",
+        details: "Ouverture via cmd /c start vscode://."
+      };
+    } catch (error) {
+      commandErrors.push(
+        `open-vscode-app: ${error instanceof Error ? error.message : "unknown error"}`
+      );
+    }
   }
 
   if (process.platform === "darwin") {
