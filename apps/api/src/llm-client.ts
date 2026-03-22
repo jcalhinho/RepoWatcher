@@ -5,8 +5,22 @@ export type LlmMessage = {
   content: string;
 };
 
+export type LlmUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  requests: number;
+  model?: string;
+};
+
+export type LlmCompletion = {
+  content: string;
+  usage: LlmUsage | null;
+};
+
 export interface LlmClient {
   complete(messages: LlmMessage[]): Promise<string>;
+  completeWithUsage(messages: LlmMessage[]): Promise<LlmCompletion>;
 }
 
 const envSchema = z.object({
@@ -30,6 +44,14 @@ const envSchema = z.object({
 });
 
 type OpenAiChatResponse = {
+  model?: string;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    input_tokens?: number;
+    output_tokens?: number;
+  };
   choices?: Array<{
     message?: {
       content?: string | null;
@@ -50,7 +72,50 @@ class OpenAiCompatibleLlmClient implements LlmClient {
     this.timeoutMs = timeoutMs;
   }
 
+  private extractUsage(payload: OpenAiChatResponse): LlmUsage | null {
+    const inputFromPrompt = Number(payload.usage?.prompt_tokens ?? payload.usage?.input_tokens ?? 0);
+    const outputFromCompletion = Number(payload.usage?.completion_tokens ?? payload.usage?.output_tokens ?? 0);
+    let inputTokens = Number.isFinite(inputFromPrompt) && inputFromPrompt > 0 ? Math.round(inputFromPrompt) : 0;
+    let outputTokens =
+      Number.isFinite(outputFromCompletion) && outputFromCompletion > 0 ? Math.round(outputFromCompletion) : 0;
+    let totalTokens =
+      Number.isFinite(payload.usage?.total_tokens) && Number(payload.usage?.total_tokens) > 0
+        ? Math.round(Number(payload.usage?.total_tokens))
+        : inputTokens + outputTokens;
+
+    if (totalTokens > 0) {
+      if (inputTokens === 0 && outputTokens > 0 && outputTokens <= totalTokens) {
+        inputTokens = totalTokens - outputTokens;
+      } else if (outputTokens === 0 && inputTokens > 0 && inputTokens <= totalTokens) {
+        outputTokens = totalTokens - inputTokens;
+      } else if (inputTokens === 0 && outputTokens === 0) {
+        inputTokens = totalTokens;
+      }
+    }
+
+    if (inputTokens <= 0 && outputTokens <= 0 && totalTokens <= 0) {
+      return null;
+    }
+
+    if (totalTokens <= 0) {
+      totalTokens = inputTokens + outputTokens;
+    }
+
+    return {
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      requests: 1,
+      model: typeof payload.model === "string" ? payload.model : undefined
+    };
+  }
+
   async complete(messages: LlmMessage[]): Promise<string> {
+    const completion = await this.completeWithUsage(messages);
+    return completion.content;
+  }
+
+  async completeWithUsage(messages: LlmMessage[]): Promise<LlmCompletion> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -81,7 +146,10 @@ class OpenAiCompatibleLlmClient implements LlmClient {
         throw new Error("LLM response missing message content");
       }
 
-      return content;
+      return {
+        content,
+        usage: this.extractUsage(payload)
+      };
     } finally {
       clearTimeout(timeout);
     }

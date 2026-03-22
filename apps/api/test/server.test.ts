@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { LlmClient, LlmMessage } from "../src/llm-client.js";
+import type { LlmClient, LlmCompletion, LlmMessage } from "../src/llm-client.js";
 import { buildServer } from "../src/server.js";
 
 class FakeLlmClient implements LlmClient {
@@ -14,12 +14,33 @@ class FakeLlmClient implements LlmClient {
   }
 
   async complete(_messages: LlmMessage[]): Promise<string> {
+    const completion = await this.completeWithUsage(_messages);
+    return completion.content;
+  }
+
+  async completeWithUsage(_messages: LlmMessage[]): Promise<LlmCompletion> {
     const current = this.outputs[this.index];
     this.index += 1;
     if (!current) {
-      return JSON.stringify({ final: "No fake output left." });
+      return {
+        content: JSON.stringify({ final: "No fake output left." }),
+        usage: {
+          inputTokens: 20,
+          outputTokens: 10,
+          totalTokens: 30,
+          requests: 1
+        }
+      };
     }
-    return current;
+    return {
+      content: current,
+      usage: {
+        inputTokens: 20,
+        outputTokens: 10,
+        totalTokens: 30,
+        requests: 1
+      }
+    };
   }
 }
 
@@ -252,6 +273,34 @@ describe("API chat modes", () => {
     expect(chatPayload.mode).toBe("manual");
     expect(chatPayload.steps).toHaveLength(0);
     expect(chatPayload.reply).toContain("Commandes disponibles");
+  });
+
+  it("returns english manual responses when lang is en", async () => {
+    const repoPath = await createLocalRepoFixture();
+    const server = await buildServer();
+    serversToClose.push(server);
+
+    const sessionResponse = await server.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { repoPath }
+    });
+
+    const sessionPayload = sessionResponse.json() as { id: string };
+    const chatResponse = await server.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionPayload.id}/chat`,
+      payload: { message: "/help", lang: "en" }
+    });
+
+    expect(chatResponse.statusCode).toBe(200);
+    const chatPayload = chatResponse.json() as {
+      mode: string;
+      reply: string;
+    };
+    expect(chatPayload.mode).toBe("manual");
+    expect(chatPayload.reply).toContain("Available commands");
+    expect(chatPayload.reply).not.toContain("Commandes disponibles");
   });
 
   it("runs agent mode with tool calls when LLM is configured", async () => {
@@ -535,11 +584,54 @@ describe("API chat modes", () => {
         directoryNotes: string[];
         entryPoints: string[];
         suggestedCommands: string[];
+        strengths: string[];
+        weaknesses: string[];
+        urgentImprovements: string[];
+        attentionPoints: string[];
+        securityFindings: string[];
+        suspiciousFiles: string[];
       };
     };
     expect(overviewPayload.mode).toBe("heuristic");
     expect(overviewPayload.overview.overview).toContain("Scan initial termine");
     expect(Array.isArray(overviewPayload.overview.directoryNotes)).toBe(true);
+    expect(Array.isArray(overviewPayload.overview.strengths)).toBe(true);
+    expect(Array.isArray(overviewPayload.overview.securityFindings)).toBe(true);
+  });
+
+  it("returns english repo overview when lang is en", async () => {
+    const repoPath = await createGraphRepoFixture();
+    const server = await buildServer();
+    serversToClose.push(server);
+
+    const sessionResponse = await server.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { repoPath }
+    });
+    const sessionPayload = sessionResponse.json() as { id: string };
+
+    const overviewResponse = await server.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionPayload.id}/repo_overview`,
+      payload: {
+        rootPath: "frontend/src",
+        maxNodes: 120,
+        lang: "en"
+      }
+    });
+
+    expect(overviewResponse.statusCode).toBe(200);
+    const overviewPayload = overviewResponse.json() as {
+      mode: string;
+      overview: {
+        overview: string;
+        strengths: string[];
+      };
+    };
+    expect(overviewPayload.mode).toBe("heuristic");
+    expect(overviewPayload.overview.overview).toContain("Initial scan complete");
+    expect(Array.isArray(overviewPayload.overview.strengths)).toBe(true);
   });
 
   it("explains a clicked file with interactions and utility", async () => {

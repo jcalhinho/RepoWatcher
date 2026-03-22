@@ -1,7 +1,8 @@
 import type { CommandPolicy } from "@repo-watcher/core";
 import { LocalRepository, runAllowedCommand } from "@repo-watcher/core";
 import { z } from "zod";
-import type { LlmClient, LlmMessage } from "./llm-client.js";
+import type { LlmClient, LlmMessage, LlmUsage } from "./llm-client.js";
+import type { UserLanguage } from "./manual-commands.js";
 
 export type AgentStepTrace = {
   step: number;
@@ -13,6 +14,7 @@ export type AgentStepTrace = {
 export type AgentRunResult = {
   reply: string;
   steps: AgentStepTrace[];
+  usage: LlmUsage;
 };
 
 const agentTurnSchema = z.object({
@@ -25,43 +27,47 @@ const agentTurnSchema = z.object({
   final: z.string().min(1).optional()
 });
 
-const MAX_TOOL_STEPS = 8;
+const MAX_TOOL_STEPS = 12;
 const TOOL_OUTPUT_LIMIT = 4_000;
 
-const SYSTEM_PROMPT = [
-  "You are a local coding agent focused on repository understanding and safe analysis.",
-  "You must use the allowed tools to gather evidence before concluding.",
-  "Primary goals: clear code explanation, concrete improvement suggestions, and bug/regression/risk detection.",
-  "Be precise: cite probable files/functions/lines when possible, and separate facts from hypotheses.",
-  "Tooling:",
-  "- list(input): list files under a relative path",
-  "- read(input): read a text file (relative path)",
-  "- search(input): search text in the repository",
-  "- run(input): execute an allowlisted command",
-  "  Allowed run commands:",
-  "  - ls -la",
-  "  - npm|pnpm|yarn test|lint|build",
-  "  - cat <relative_file>",
-  "  - head -n <1..500> <relative_file>",
-  "  - tail -n <1..500> <relative_file>",
-  "  - cat|head|tail in read-only pipes (example: head -n 400 foo.ts | tail -n 50)",
-  "  - Native Windows: cmd /c dir|type and powershell/pwsh Get-Content (restricted forms)",
-  "",
-  "Respond ONLY with valid JSON in one of these formats:",
-  '{"action":{"tool":"list|read|search|run","input":"..."}}',
-  "or",
-  '{"final":"..."}',
-  "",
-  "Rules:",
-  "- If information is missing, call a tool.",
-  "- Do not invent files or facts.",
-  "- Avoid redundant actions (do not repeat list('.') without reason).",
-  "- Prioritize README and entry files (main, routes, config) for repository explanation.",
-  "- Suggest practical and safe next steps.",
-  "- For bug analysis, provide symptom, likely cause, impact, verification, and minimal fix.",
-  "- Final answer content must be in French.",
-  "- When you have enough evidence, return final."
-].join("\n");
+function buildSystemPrompt(language: UserLanguage): string {
+  const inEnglish = language === "en";
+  const outputLanguage = inEnglish ? "English" : "French";
+  return [
+    "You are a local coding agent focused on repository understanding and safe analysis.",
+    "You must use the allowed tools to gather evidence before concluding.",
+    "Primary goals: clear code explanation, concrete improvement suggestions, and bug/regression/risk detection.",
+    "Be precise: cite probable files/functions/lines when possible, and separate facts from hypotheses.",
+    "Tooling:",
+    "- list(input): list files under a relative path",
+    "- read(input): read a text file (relative path)",
+    "- search(input): search text in the repository",
+    "- run(input): execute an allowlisted command",
+    "  Allowed run commands:",
+    "  - ls -la",
+    "  - npm|pnpm|yarn test|lint|build",
+    "  - cat <relative_file>",
+    "  - head -n <1..500> <relative_file>",
+    "  - tail -n <1..500> <relative_file>",
+    "  - cat|head|tail in read-only pipes (example: head -n 400 foo.ts | tail -n 50)",
+    "  - Native Windows: cmd /c dir|type and powershell/pwsh Get-Content (restricted forms)",
+    "",
+    "Respond ONLY with valid JSON in one of these formats:",
+    '{"action":{"tool":"list|read|search|run","input":"..."}}',
+    "or",
+    '{"final":"..."}',
+    "",
+    "Rules:",
+    "- If information is missing, call a tool.",
+    "- Do not invent files or facts.",
+    "- Avoid redundant actions (do not repeat list('.') without reason).",
+    "- Prioritize README and entry files (main, routes, config) for repository explanation.",
+    "- Suggest practical and safe next steps.",
+    "- For bug analysis, provide symptom, likely cause, impact, verification, and minimal fix.",
+    `- Final answer content must be in ${outputLanguage}.`,
+    "- When you have enough evidence, return final."
+  ].join("\n");
+}
 
 function tokenize(text: string): string[] {
   return text
@@ -97,6 +103,35 @@ function truncate(text: string, maxLength: number): string {
     return text;
   }
   return `${text.slice(0, maxLength)}\n...[truncated]`;
+}
+
+function buildTimeoutReply(steps: AgentStepTrace[], language: UserLanguage): string {
+  const inEnglish = language === "en";
+  const toolUsage = new Map<string, number>();
+  const touchedInputs: string[] = [];
+  for (const step of steps) {
+    toolUsage.set(step.tool, (toolUsage.get(step.tool) ?? 0) + 1);
+    if (step.input && touchedInputs.length < 8) {
+      touchedInputs.push(step.input);
+    }
+  }
+  const usageText =
+    [...toolUsage.entries()].map(([tool, count]) => `${tool}:${count}`).join(", ") || (inEnglish ? "no tool executed" : "aucun outil execute");
+  const scopeText = touchedInputs.length > 0 ? touchedInputs.join(" | ") : inEnglish ? "(no actionable target)" : "(aucune cible exploitable)";
+
+  return inEnglish
+    ? [
+        `The agent could not finish after ${MAX_TOOL_STEPS} steps.`,
+        `Tools used: ${usageText}.`,
+        `Already inspected scope: ${scopeText}.`,
+        "Recommended retry: target a precise area (file, bug, endpoint) or use /help."
+      ].join("\n")
+    : [
+        `L'agent n'a pas pu finaliser apres ${MAX_TOOL_STEPS} etapes.`,
+        `Outils utilises: ${usageText}.`,
+        `Perimetre deja inspecte: ${scopeText}.`,
+        "Relance recommandee: cible une zone precise (ex: fichier, bug, endpoint) ou utilise /help."
+      ].join("\n");
 }
 
 async function executeTool(
@@ -140,11 +175,29 @@ export async function runAgentWithTools(
   repository: LocalRepository,
   userMessage: string,
   llmClient: LlmClient,
-  commandPolicy: CommandPolicy
+  commandPolicy: CommandPolicy,
+  language: UserLanguage = "fr"
 ): Promise<AgentRunResult> {
+  const usage: LlmUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    requests: 0
+  };
+  const accumulateUsage = (value: LlmUsage | null) => {
+    if (!value) return;
+    usage.inputTokens += Math.max(0, Math.round(value.inputTokens || 0));
+    usage.outputTokens += Math.max(0, Math.round(value.outputTokens || 0));
+    usage.totalTokens += Math.max(0, Math.round(value.totalTokens || 0));
+    usage.requests += Math.max(0, Math.round(value.requests || 0));
+    if (value.model) {
+      usage.model = value.model;
+    }
+  };
+
   const steps: AgentStepTrace[] = [];
   const messages: LlmMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: buildSystemPrompt(language) },
     {
       role: "user",
       content: `User request:\n${userMessage}\n\nStart by choosing action or final.`
@@ -152,7 +205,9 @@ export async function runAgentWithTools(
   ];
 
   for (let step = 1; step <= MAX_TOOL_STEPS; step += 1) {
-    const raw = await llmClient.complete(messages);
+    const completion = await llmClient.completeWithUsage(messages);
+    accumulateUsage(completion.usage);
+    const raw = completion.content;
     const parsedJson = extractFirstJsonObject(raw);
 
     const parsedTurn = agentTurnSchema.safeParse(JSON.parse(parsedJson));
@@ -167,7 +222,8 @@ export async function runAgentWithTools(
     if (turn.final) {
       return {
         reply: turn.final,
-        steps
+        steps,
+        usage
       };
     }
 
@@ -200,11 +256,32 @@ export async function runAgentWithTools(
     });
   }
 
+  try {
+    const forcedCompletion = await llmClient.completeWithUsage([
+      ...messages,
+      {
+        role: "user",
+        content:
+          "Limite d'etapes atteinte. Donne maintenant une reponse finale concise basee uniquement sur les observations deja collectees. Reponds STRICTEMENT avec {\"final\":\"...\"}."
+      }
+    ]);
+    accumulateUsage(forcedCompletion.usage);
+    const forcedRaw = forcedCompletion.content;
+    const forcedParsed = agentTurnSchema.safeParse(JSON.parse(extractFirstJsonObject(forcedRaw)));
+    if (forcedParsed.success && forcedParsed.data.final) {
+      return {
+        reply: forcedParsed.data.final,
+        steps,
+        usage
+      };
+    }
+  } catch {
+    // Fallback handled below.
+  }
+
   return {
-    reply: [
-      "L'agent n'a pas finalise dans la limite de steps.",
-      "Relance avec une demande plus ciblee ou utilise les commandes /help."
-    ].join("\n"),
-    steps
+    reply: buildTimeoutReply(steps, language),
+    steps,
+    usage
   };
 }

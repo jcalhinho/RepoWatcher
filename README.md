@@ -1,154 +1,282 @@
 # RepoWatcher
 
-Assistant local pour explorer rapidement un dépôt: structure, interactions entre fichiers, zones à risque, explications pédagogiques par clic, et chat outillé sécurisé.
+Assistant local d'exploration de dépôt (FR/EN): cartographier un repo, visualiser les interactions entre fichiers, identifier les zones sensibles, et obtenir des explications IA contextualisées.
+
+Local repository exploration assistant (FR/EN): map a repo, visualize file interactions, identify sensitive areas, and get contextual AI explanations.
+
+## Objectif principal
+
+Le but de RepoWatcher est de **réduire le temps de compréhension d'une codebase** (onboarding, audit, investigation technique) grâce à:
+
+- un graphe interactif orienté architecture et flux applicatif,
+- un assistant de chat outillé (lecture/listing/recherche/commandes contrôlées),
+- des explications ciblées fichier par fichier.
+
+The goal of RepoWatcher is to **reduce codebase understanding time** (onboarding, audit, technical investigation) with:
+
+- an architecture and user-flow oriented interactive graph,
+- a tool-enabled chat assistant (read/list/search/safe commands),
+- targeted file-by-file explanations.
 
 ---
 
-## FR - Vue d'ensemble
+## Sommaire
 
-### Ce que fait l'application
+1. [Ce que fait RepoWatcher](#ce-que-fait-repowatcher)
+2. [Stack technique](#stack-technique)
+3. [Architecture du dépôt](#architecture-du-dépôt)
+4. [Comment ça fonctionne](#comment-ça-fonctionne)
+5. [Prérequis](#prérequis)
+6. [Installation](#installation)
+7. [Démarrage rapide](#démarrage-rapide)
+8. [Configuration](#configuration)
+9. [Utilisation](#utilisation)
+10. [API HTTP](#api-http)
+11. [Sécurité et garde-fous](#sécurité-et-garde-fous)
+12. [Développement et qualité](#développement-et-qualité)
+13. [Dépannage](#dépannage)
+14. [Limites actuelles](#limites-actuelles)
+15. [Licence](#licence)
 
-- Ouvre une session sur un repo local.
-- Lance un scan de codebase (fichiers + interactions) et construit un graphe interactif.
-- Affiche quatre types de liens dans le graphe:
-  - `Imports` (dépendances techniques)
-  - `API links` (appels détectés entre fichiers frontend et routes backend)
-  - `Config links` (interactions détectées entre fichiers de config, y compris backend/frontend)
-  - `User flow` (parcours fonctionnel estimé)
-- Met en avant fichiers clés, zones de risque, et parcours d'exploration.
-- Raccourcit les chemins dans les chips pour la lisibilité (chemin complet en tooltip).
-- Au clic sur un fichier, génère une explication IA orientée onboarding (junior -> senior):
-  - rôle du fichier
-  - fonctions et variables importantes
-  - imports/exports
-  - utilité dans le flow global
-- Fournit un chat (streaming) avec outils contrôlés (`list/read/search/run`).
-- Propose une édition supervisée (`read`, preview diff, apply patch avec garde hash).
+---
 
-### Support multi-langages (graphe)
+## Ce que fait RepoWatcher
 
-Le graphe indexe désormais de nombreux langages, par exemple:
+### Fonctionnalités principales
 
-- JS/TS, Python
-- Java/Kotlin/Scala/Groovy
-- Go, Rust
-- C#/F#/VB
-- C/C++/ObjC
-- PHP, Ruby, Lua, Perl, Shell
-- Swift, Dart, Elixir, Erlang, Haskell, Clojure, R, Julia
+- Création de session sur un dépôt local.
+- Construction d'un graphe de fichiers multi-langages.
+- Visualisation de plusieurs types de liens:
+  - `import`
+  - `api`
+  - `config`
+  - `flow`
+- Mise en avant des fichiers importants (score, risque, interactions).
+- Exploration interactive:
+  - sélection/survol des nœuds,
+  - survol/clic des liens,
+  - focus visuel des relations,
+  - panneau d'insight contextuel.
+- Chat assistant:
+  - mode manuel (`/help`, `/list`, `/read`, `/search`, `/run`),
+  - mode agent LLM (si variables LLM configurées),
+  - streaming NDJSON.
+- Explication d'un fichier dans le flow de l'application.
+- Résumé initial IA du repo: points forts, points faibles, urgences d'amélioration, points d'attention, alertes de sécurité, fichiers suspects.
+- Tour IA step-by-step: succession de fichiers utilisée par un utilisateur quand il arrive et utilise l'app.
+- Graphe hiérarchique: fichiers connectés en pyramide + fichiers orphelins séparés en colonne gauche.
+- Chat sans débordement horizontal (retour à la ligne forcé dans les messages).
+- Patch supervisé avec prévisualisation diff et vérification de hash.
 
-### Prompts LLM (Gemini via endpoint OpenAI-compatible)
+### Language / Langue
 
-RepoWatcher utilise plusieurs prompts système, par design, car chaque endpoint a un objectif différent.
+- L'UI permet de choisir la langue utilisateur: `fr` ou `en`.
+- The UI lets users choose their language: `fr` or `en`.
+- Les endpoints chat/synthèse/explain acceptent `lang: "fr" | "en"` pour forcer la langue de sortie.
+- Chat/overview/explain endpoints accept `lang: "fr" | "en"` to force output language.
 
-#### Quand les prompts sont appelés
+### Cas d'usage typiques
 
-1. `POST /api/sessions/:sessionId/chat` et `/chat/stream`
-   - Prompt: `apps/api/src/agent-orchestrator.ts` (`SYSTEM_PROMPT`)
-   - Rôle précis:
-     - piloter un agent outillé (`list/read/search/run`)
-     - forcer un format JSON strict (`action` ou `final`)
-     - analyser le repo sans halluciner
-     - produire la réponse finale en français
+- Onboarding d'un nouveau développeur.
+- Cartographie rapide avant refactor.
+- Audit de risques techniques.
+- Investigation de régression.
+- Préparation d'une revue d'architecture.
 
-2. `POST /api/sessions/:sessionId/explain_file`
-   - Prompt: `apps/api/src/repo-intelligence.ts` (`systemPrompt` de `generateFileExplanation`)
-   - Rôle précis:
-     - expliquer un fichier dans son contexte d'application
-     - rendre l'explication pédagogique tous niveaux
-     - renvoyer un JSON structuré (`overview`, `utilityInApp`, `interactions`, etc.)
-     - imposer des valeurs de sortie en français
+---
 
-3. `POST /api/sessions/:sessionId/repo_overview`
-   - Prompt: `apps/api/src/repo-intelligence.ts` (`systemPrompt` de `generateRepoOverview`)
-   - Rôle précis:
-     - fournir un brief d'onboarding global du repo
-     - renvoyer un JSON structuré (`overview`, `directoryNotes`, `entryPoints`, `suggestedCommands`)
-     - imposer des valeurs de sortie en français
+## Stack technique
 
-Pourquoi plusieurs prompts:
+### Runtime & langage
 
-- Ce n'est pas une confusion.
-- C'est une séparation de responsabilités:
-  - agent outillé de conversation
-  - explication d'un fichier
-  - synthèse globale du repo
+- **Node.js** (ESM)
+- **TypeScript**
 
-### Stack
+### Backend
 
-- Monorepo npm workspaces
-- Node.js + TypeScript
-- API: Fastify
-- Validation: Vitest + TypeScript typecheck
+- **Fastify** (`apps/api`)
+- **Zod** pour validation de payloads
 
-### Arborescence
+### Frontend (servi statiquement)
 
-- `apps/api`: serveur HTTP + UI web
-- `apps/worker`: worker local (base pour exécution future)
-- `packages/core`: sécurité repo local, path guard, policy commandes
-- `docs`: blueprint/backlog
+- **React** + **React Flow** (chargés via CDN)
+- Assets UI: `apps/api/ui/index.html`, `app.js`, `app.css`
 
-### Prérequis
+### IA
 
-- Node.js 20+
-- npm 10+
+- Client **OpenAI-compatible Chat Completions**
+- Support de modèles tiers via `LLM_BASE_URL` (ex: Gemini proxy compatible)
 
-### Installation
+### Outils qualité
+
+- **Vitest** (tests)
+- **TypeScript typecheck**
+
+---
+
+## Architecture du dépôt
+
+```text
+RepoWatcher/
+├── apps/
+│   ├── api/
+│   │   ├── src/
+│   │   │   ├── server.ts              # API Fastify, sessions, endpoints principaux
+│   │   │   ├── repo-graph.ts          # Construction graphe (nodes/edges/summary)
+│   │   │   ├── repo-intelligence.ts   # Repo overview + file explain (heuristique + LLM)
+│   │   │   ├── agent-orchestrator.ts  # Agent outillé (list/read/search/run)
+│   │   │   ├── manual-commands.ts     # Commandes slash manuelles
+│   │   │   ├── llm-client.ts          # Client LLM OpenAI-compatible
+│   │   │   ├── patch-utils.ts         # Diff preview + hash
+│   │   │   └── web-ui.ts              # Service des assets UI
+│   │   ├── test/server.test.ts
+│   │   └── ui/                        # Interface graphe + chat
+│   └── worker/
+│       └── src/worker.ts              # Scaffold worker (placeholder)
+├── packages/
+│   └── core/
+│       └── src/
+│           ├── local-repository.ts    # Listing, lecture, recherche (rg fallback natif)
+│           ├── command-policy.ts      # Allowlist commandes + exécution sécurisée
+│           └── path-guard.ts          # Protection anti path traversal
+├── package.json                       # Workspaces npm
+└── tsconfig.base.json
+```
+
+---
+
+## Comment ça fonctionne
+
+### 1) Session
+
+`POST /api/sessions` enregistre une session en mémoire (`Map`) avec:
+
+- `id`
+- `repoPath`
+- `createdAt`
+
+### 2) Graphe
+
+`POST /api/sessions/:sessionId/repo_graph`:
+
+- scanne les fichiers supportés,
+- calcule nœuds + liens (`import`, `api`, `config`, `flow`),
+- retourne un `summary` (key files, risk files, counts).
+
+### 3) Intelligence dépôt
+
+- `repo_overview`: synthèse globale du repo.
+- `explain_file`: explication ciblée d'un fichier.
+
+Les deux endpoints fonctionnent:
+
+- en mode heuristique (sans LLM),
+- ou enrichis par LLM (si configuré).
+
+### 4) Chat
+
+- `chat`: réponse complète en une fois.
+- `chat/stream`: flux NDJSON (`meta`, `delta`, `done`, `error`).
+
+### 5) Édition supervisée
+
+`apply_patch` permet:
+
+- preview de changement,
+- vérification `expectedOldHash`,
+- application explicite (`apply: true`).
+
+---
+
+## Prérequis
+
+- **Node.js 20+**
+- **npm 10+**
+- (Optionnel) **ripgrep** (`rg`) pour accélérer la recherche texte
+
+---
+
+## Installation
 
 ```bash
 npm install
 ```
 
-### Vérification
+---
 
-```bash
-npm run typecheck
-npm run test
-npm run lint
-npm run build
-```
+## Démarrage rapide
 
-### Lancer l'API
+### 1. Lancer l'API
 
 ```bash
 npm run --workspace @repo-watcher/api dev
 ```
 
-- API: `http://127.0.0.1:8787`
+Par défaut:
+
+- Host: `127.0.0.1`
+- Port: `8787`
 - UI: `http://127.0.0.1:8787/`
 
-### Variables d'environnement (mode agent LLM)
+### 2. Créer une session
 
-Le mode manuel fonctionne sans clé LLM.
+Depuis l'UI:
 
-Pour activer le mode agent:
+- saisir un chemin local de repo,
+- cliquer `Créer session`,
+- générer/explorer le graphe.
+
+### 3. Optionnel: lancer le worker (scaffold)
+
+```bash
+npm run --workspace @repo-watcher/worker dev
+```
+
+---
+
+## Configuration
+
+### Variables d'environnement API
+
+| Variable | Requis | Défaut | Description |
+|---|---|---|---|
+| `HOST` | non | `127.0.0.1` | Host Fastify |
+| `PORT` | non | `8787` | Port Fastify |
+
+### Variables d'environnement LLM (mode agent)
+
+| Variable | Requis | Défaut | Description |
+|---|---|---|---|
+| `LLM_API_KEY` | oui (mode agent) | - | Clé API du provider |
+| `LLM_MODEL` | non | `gpt-4.1-mini` | Nom du modèle |
+| `LLM_BASE_URL` | non | `https://api.openai.com/v1` | Endpoint OpenAI-compatible |
+| `LLM_TIMEOUT_MS` | non | `30000` | Timeout en ms |
+
+Exemple:
 
 ```bash
 export LLM_API_KEY="<secret>"
 export LLM_MODEL="gemini-2.5-pro"
 export LLM_BASE_URL="<openai-compatible-endpoint>"
+export LLM_TIMEOUT_MS="30000"
 npm run --workspace @repo-watcher/api dev
 ```
 
-Variables supportées:
+---
 
-- `LLM_API_KEY`
-- `LLM_MODEL` (défaut: `gpt-4.1-mini`)
-- `LLM_BASE_URL` (défaut: `https://api.openai.com/v1`)
-- `LLM_TIMEOUT_MS` (défaut: `30000`)
+## Utilisation
 
-### Endpoints principaux
+### Flux recommandé
 
-- Santé: `GET /health`
-- Session: `POST /api/sessions`
-- Chat: `POST /api/sessions/:sessionId/chat`, `POST /api/sessions/:sessionId/chat/stream`
-- Fichiers/Patch: `POST /api/sessions/:sessionId/file/read`, `POST /api/sessions/:sessionId/apply_patch`
-- Graphe/Intelligence:
-  - `POST /api/sessions/:sessionId/repo_graph`
-  - `POST /api/sessions/:sessionId/repo_overview`
-  - `POST /api/sessions/:sessionId/explain_file`
+1. Ouvrir l'UI.
+2. Créer une session sur un repo local.
+3. Générer le graphe (`repo_graph`).
+4. Naviguer via nœuds/liens pour comprendre le flow.
+5. Utiliser `repo_overview` pour une vue macro.
+6. Cliquer un fichier puis `explain_file` pour le détail.
+7. Utiliser le chat pour des questions ciblées ou commandes outillées.
 
-### Commandes manuelles disponibles
+### Commandes manuelles du chat
 
 - `/help`
 - `/list [path]`
@@ -156,141 +284,141 @@ Variables supportées:
 - `/search <query>`
 - `/run <commande>`
 
-### Politique sécurité commandes (`/run`)
+---
 
-Allowlist stricte (deny-by-default):
+## API HTTP
 
-- `ls -la`
-- `npm test`
-- `npm run lint`
-- `npm run build`
-- `pnpm test|lint|build`
-- `yarn test|lint|build`
-- `cat <fichier_relatif>`
-- `head -n <1..500> <fichier_relatif>`
-- `tail -n <1..500> <fichier_relatif>`
-- pipeline de lecture sans shell (2-3 segments max), ex:
-  - `head -n 400 fichier.ts | tail -n 50`
-  - `cat README.md | tail -n 20`
-- commandes de lecture Windows (sans WSL, uniquement sous Windows):
-  - `cmd /c dir`
-  - `cmd /c dir docs`
-  - `cmd /c type README.md`
-  - `powershell -NoProfile -Command Get-Content -Path README.md`
-  - `powershell -NoProfile -Command Get-Content -Path README.md -Tail 20`
-  - `powershell -NoProfile -Command Get-Content -Path README.md -TotalCount 20`
+### Santé
 
-Contraintes:
+- `GET /health`
 
-- pas de chemins absolus
-- pas de `..`
-- pas de shell libre
+Réponse:
 
-### Limites actuelles
+```json
+{ "status": "ok" }
+```
 
-- Sessions en mémoire (pas de persistance DB)
-- Détection user-flow et config-links partiellement heuristique
-- Explications IA dépendantes du contexte scanné
-- Pas de workflow Git automatique (branch/commit)
+### Sessions
+
+- `POST /api/sessions`
+
+Payload:
+
+```json
+{ "repoPath": "/abs/path/to/repo" }
+```
+
+### Chat
+
+- `POST /api/sessions/:sessionId/chat`
+- `POST /api/sessions/:sessionId/chat/stream`
+
+Payload:
+
+```json
+{ "message": "explique l'architecture", "lang": "fr" }
+```
+
+### Lecture fichier
+
+- `POST /api/sessions/:sessionId/file/read`
+
+Payload:
+
+```json
+{ "path": "apps/api/src/server.ts" }
+```
+
+### Patch supervisé
+
+- `POST /api/sessions/:sessionId/apply_patch`
+
+Payload:
+
+```json
+{
+  "path": "apps/api/src/server.ts",
+  "newContent": "...",
+  "expectedOldHash": "<sha256 optional>",
+  "apply": false
+}
+```
+
+### Graphe
+
+- `POST /api/sessions/:sessionId/repo_graph`
+
+Payload:
+
+```json
+{ "rootPath": ".", "maxNodes": 180, "lang": "fr" }
+```
+
+### Overview dépôt
+
+- `POST /api/sessions/:sessionId/repo_overview`
+
+Payload:
+
+```json
+{ "rootPath": ".", "maxNodes": 180, "lang": "fr" }
+```
+
+### Explication fichier
+
+- `POST /api/sessions/:sessionId/explain_file`
+
+Payload:
+
+```json
+{
+  "path": "apps/api/src/server.ts",
+  "rootPath": ".",
+  "maxNodes": 220,
+  "trailPaths": [],
+  "lang": "fr"
+}
+```
+
+`lang` peut être `"fr"` ou `"en"` sur:
+
+- `POST /api/sessions/:sessionId/chat`
+- `POST /api/sessions/:sessionId/chat/stream`
+- `POST /api/sessions/:sessionId/repo_graph`
+- `POST /api/sessions/:sessionId/repo_overview`
+- `POST /api/sessions/:sessionId/explain_file`
 
 ---
 
-## EN - Overview
+## Sécurité et garde-fous
 
-### What the application does
+### Accès filesystem
 
-- Opens a session on a local repository.
-- Scans the codebase (files + interactions) and builds an interactive graph.
-- Shows four graph edge types:
-  - `Imports` (technical dependencies)
-  - `API links` (detected frontend-to-backend route calls)
-  - `Config links` (detected interactions between config files, including backend/frontend)
-  - `User flow` (estimated functional journey)
-- Highlights key files, risk areas, and exploration trail.
-- Shortens chip paths for readability (full path kept in tooltip).
-- On file click, generates onboarding-oriented AI explanations (junior -> senior):
-  - file role
-  - key functions/variables
-  - imports/exports
-  - role in overall flow
-- Provides a streaming chat with controlled tools (`list/read/search/run`).
-- Provides supervised editing (`read`, diff preview, hash-guarded apply patch).
+- Toutes les résolutions de chemin passent par `resolveInsideRoot`.
+- Protection explicite contre path traversal (`..`, chemins hors racine).
 
-### Multi-language graph support
+### Exécution commandes (`/run`)
 
-The graph now indexes many languages, including:
+- Politique **deny-by-default** (allowlist stricte).
+- Exemples autorisés:
+  - `ls -la`
+  - `npm test`, `npm run lint`, `npm run build`
+  - `cat <relative_file>`
+  - `head -n <1..500> <relative_file>`
+  - `tail -n <1..500> <relative_file>`
+  - pipelines de lecture bornés (2-3 segments)
+- Sous Windows: sous-ensemble contrôlé `cmd /c` et `powershell Get-Content`.
 
-- JS/TS, Python
-- Java/Kotlin/Scala/Groovy
-- Go, Rust
-- C#/F#/VB
-- C/C++/ObjC
-- PHP, Ruby, Lua, Perl, Shell
-- Swift, Dart, Elixir, Erlang, Haskell, Clojure, R, Julia
+### Robustesse LLM
 
-### LLM prompts (Gemini through OpenAI-compatible endpoint)
+- L'agent doit répondre en JSON structuré (`action` ou `final`).
+- Boucle bornée (`MAX_TOOL_STEPS = 12`) pour éviter dérives.
 
-RepoWatcher intentionally uses multiple system prompts because each endpoint has a different responsibility.
+---
 
-#### When prompts are called
+## Développement et qualité
 
-1. `POST /api/sessions/:sessionId/chat` and `/chat/stream`
-   - Prompt: `apps/api/src/agent-orchestrator.ts` (`SYSTEM_PROMPT`)
-   - Purpose:
-     - orchestrate a tool-using analysis agent (`list/read/search/run`)
-     - enforce strict JSON output (`action` or `final`)
-     - keep analysis grounded in repository evidence
-     - enforce final answer content in French
-
-2. `POST /api/sessions/:sessionId/explain_file`
-   - Prompt: `apps/api/src/repo-intelligence.ts` (`generateFileExplanation` system prompt)
-   - Purpose:
-     - explain one file in app context
-     - keep explanations pedagogical for mixed seniority
-     - return structured JSON (`overview`, `utilityInApp`, `interactions`, etc.)
-     - force French output values
-
-3. `POST /api/sessions/:sessionId/repo_overview`
-   - Prompt: `apps/api/src/repo-intelligence.ts` (`generateRepoOverview` system prompt)
-   - Purpose:
-     - generate a repository onboarding brief
-     - return structured JSON (`overview`, `directoryNotes`, `entryPoints`, `suggestedCommands`)
-     - force French output values
-
-Why multiple prompts:
-
-- This is not confusion.
-- It is separation of concerns:
-  - conversational tool-using agent
-  - file-level pedagogical explanation
-  - repository-level onboarding summary
-
-### Stack
-
-- npm workspaces monorepo
-- Node.js + TypeScript
-- API: Fastify
-- Validation: Vitest + TypeScript typecheck
-
-### Structure
-
-- `apps/api`: HTTP server + web UI
-- `apps/worker`: local worker (future execution base)
-- `packages/core`: local repo security, path guard, command policy
-- `docs`: blueprint/backlog
-
-### Requirements
-
-- Node.js 20+
-- npm 10+
-
-### Install
-
-```bash
-npm install
-```
-
-### Verify
+### Scripts racine
 
 ```bash
 npm run typecheck
@@ -299,35 +427,55 @@ npm run lint
 npm run build
 ```
 
-### Run API
+### Scripts workspace API
 
 ```bash
 npm run --workspace @repo-watcher/api dev
+npm run --workspace @repo-watcher/api test
+npm run --workspace @repo-watcher/api build
 ```
 
-- API: `http://127.0.0.1:8787`
-- UI: `http://127.0.0.1:8787/`
-
-### Environment variables (LLM agent mode)
-
-Manual mode works without LLM credentials.
-
-To enable agent mode:
+### Scripts workspace Core
 
 ```bash
-export LLM_API_KEY="<secret>"
-export LLM_MODEL="gemini-2.5-pro"
-export LLM_BASE_URL="<openai-compatible-endpoint>"
-npm run --workspace @repo-watcher/api dev
+npm run --workspace @repo-watcher/core test
+npm run --workspace @repo-watcher/core build
 ```
 
-Supported variables:
+---
 
-- `LLM_API_KEY`
-- `LLM_MODEL` (default: `gpt-4.1-mini`)
-- `LLM_BASE_URL` (default: `https://api.openai.com/v1`)
-- `LLM_TIMEOUT_MS` (default: `30000`)
+## Dépannage
 
-## License
+### L'UI ne charge pas
 
-MIT. See [LICENSE](./LICENSE).
+- Vérifier `GET /` et `GET /ui/app.js`.
+- Vérifier que `apps/api/ui` existe bien.
+
+### "Mode LLM non configuré"
+
+- Définir `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`.
+- Vérifier que l'endpoint est compatible OpenAI `/chat/completions`.
+
+### Session invalide
+
+- Une session est stockée en mémoire du process API.
+- Redémarrer l'API invalide les sessions existantes.
+
+### Recherche lente
+
+- Installer `ripgrep` (`rg`) pour améliorer `search`.
+
+---
+
+## Limites actuelles
+
+- Sessions non persistées (mémoire process).
+- Worker encore au stade scaffold.
+- Certaines relations (`flow`, `api`, `config`) sont heuristiques.
+- UI frontend servie en statique (pas de pipeline build frontend dédié).
+
+---
+
+## Licence
+
+MIT — voir [LICENSE](./LICENSE).

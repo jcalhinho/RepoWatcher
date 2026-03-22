@@ -5,143 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>RepoWatcher Local UI</title>
     <link rel="stylesheet" href="/ui/app.css" />
+    <link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.3.1",
+          "react-dom": "https://esm.sh/react-dom@18.3.1",
+          "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+          "reactflow": "https://esm.sh/reactflow@11.11.4?external=react,react-dom,react-dom/client"
+        }
+      }
+    </script>
   </head>
   <body>
-    <main class="workspace">
-      <section class="column left-column">
-        <section class="card">
-          <h1 class="title">RepoWatcher Local UI</h1>
-          <p class="subtle">Session locale, scan automatique du repo, schema interactif et onboarding technique guide.</p>
-        </section>
-
-        <div class="left-scroll">
-          <section class="card row two">
-            <label>
-              Repo local path
-              <input id="repoPath" type="text" placeholder="/Users/.../my-repo" />
-            </label>
-            <div style="display:flex; align-items:end; gap:8px;">
-              <button id="createSessionBtn">Creer session</button>
-            </div>
-            <div>
-              <div class="subtle">Session ID: <span id="sessionId">-</span></div>
-              <div id="status" class="status"></div>
-            </div>
-            <div style="display:flex; justify-content:flex-end; align-items:end;">
-              <button id="clearBtn" class="secondary">Clear chat</button>
-            </div>
-          </section>
-
-          <section class="card">
-            <h2 class="title">Repository Graph Navigator</h2>
-            <p class="subtle">Vue graphe interactive + parcours guide pour comprendre un codebase rapidement.</p>
-            <div class="row graph-config" style="margin-top: 10px;">
-              <label style="grid-column: 1 / 2;">
-                Root path
-                <input id="graphRootPath" type="text" value="." />
-              </label>
-              <label>
-                Max nodes
-                <input id="graphMaxNodes" type="number" min="20" max="400" value="180" />
-              </label>
-              <div style="display:flex; align-items:end;">
-                <button id="generateGraphBtn" class="secondary" disabled>Generer schema</button>
-              </div>
-              <div></div>
-            </div>
-            <div id="graphSummary" class="meta-grid" style="margin-top: 8px;"></div>
-            <div class="chip-section">
-              <div>
-                <div class="chip-title">Fichiers clés</div>
-                <div id="graphKeyFiles" class="chip-list"></div>
-              </div>
-              <div>
-                <div class="chip-title">Zones de risque</div>
-                <div id="graphRiskFiles" class="chip-list"></div>
-              </div>
-              <div>
-                <div class="chip-title">Parcours d'exploration</div>
-                <div id="graphTrail" class="chip-list"></div>
-              </div>
-            </div>
-            <div class="graph-toolbar">
-              <div class="graph-controls">
-                <button id="fitGraphBtn" class="secondary" type="button">Fit view</button>
-                <button id="clearTrailBtn" class="secondary" type="button">Clear trail</button>
-              </div>
-              <div class="graph-switches">
-                <label><input id="toggleImportEdges" type="checkbox" checked />Imports</label>
-                <label><input id="toggleApiEdges" type="checkbox" checked />API links</label>
-                <label><input id="toggleConfigEdges" type="checkbox" checked />Config links</label>
-                <label><input id="toggleFlowEdges" type="checkbox" checked />User flow</label>
-              </div>
-              <div class="graph-hint">Bleu = user flow • Gris = imports • Rose = appels API front->back • Orange = interactions config</div>
-            </div>
-            <div class="graph-search">
-              <input id="graphSearchInput" type="text" placeholder="Rechercher un fichier (path, nom, role)" />
-              <button id="searchGraphBtn" class="secondary" type="button">Rechercher</button>
-              <button id="tourPrevBtn" class="secondary" type="button" disabled>Tour prev</button>
-              <button id="tourNextBtn" class="secondary" type="button" disabled>Tour next</button>
-            </div>
-            <div style="margin-top: 10px;">
-              <div id="graphViewport" class="graph-viewport">
-                <svg id="graphSvg" viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid meet">
-                  <defs>
-                    <linearGradient id="edge-flow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stop-color="#1d4ed8" />
-                      <stop offset="100%" stop-color="#0ea5e9" />
-                    </linearGradient>
-                    <marker id="edge-flow-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0ea5e9" />
-                    </marker>
-                  </defs>
-                  <g id="graphLayer"></g>
-                </svg>
-              </div>
-            </div>
-            <div class="file-viewer-shell">
-              <div class="file-viewer-head">
-                <div>
-                  <div id="fileViewerPath" class="file-viewer-path">Aucun fichier sélectionné</div>
-                  <div id="fileViewerMeta" class="file-viewer-meta">Clique un fichier dans le graphe pour afficher son code.</div>
-                </div>
-                <button id="explainFileBtn" class="secondary" type="button" disabled>
-                  Expliquer ce fichier
-                </button>
-              </div>
-              <div id="fileViewerBody" class="file-viewer-body">
-                <div class="file-viewer-empty">Le visualiseur affichera ici le contenu du fichier avec numéros de ligne.</div>
-              </div>
-            </div>
-            <div class="graph-toolbar">
-              <div class="graph-controls">
-                <button id="tourStartBtn" class="secondary" type="button">Start guided tour</button>
-              </div>
-              <div id="tourStatus" class="graph-hint">Tour inactif</div>
-            </div>
-          </section>
-        </div>
-      </section>
-
-      <aside class="column right-column">
-        <section class="card chat-shell">
-          <div>
-            <h2 class="title">Chat IA</h2>
-            <p class="subtle">Conversations en direct avec rendu progressif des reponses.</p>
-          </div>
-          <div id="chatLog" class="chat-log"></div>
-          <div class="chat-input">
-            <label>
-              Message
-              <textarea id="messageInput" placeholder="Ex: explique ce fichier, propose une amelioration precise, puis liste les bugs/risques potentiels"></textarea>
-            </label>
-            <div class="chat-actions">
-              <button id="sendBtn" disabled>Envoyer</button>
-            </div>
-          </div>
-        </section>
-      </aside>
-    </main>
+    <div id="appRoot">
+      <main class="workspace">
+        <h1>RepoWatcher Local UI</h1>
+        <p>Chargement de l'interface graphique...</p>
+      </main>
+    </div>
+    <noscript>RepoWatcher Local UI nécessite JavaScript.</noscript>
     <script type="module" src="/ui/app.js"></script>
   </body>
 </html>

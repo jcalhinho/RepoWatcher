@@ -5,8 +5,8 @@ import Fastify from "fastify";
 import { createDefaultCommandPolicy, LocalRepository, type CommandPolicy } from "@repo-watcher/core";
 import { z } from "zod";
 import { runAgentWithTools } from "./agent-orchestrator.js";
-import { createEnvLlmClient, type LlmClient } from "./llm-client.js";
-import { isManualCommand, runManualCommand } from "./manual-commands.js";
+import { createEnvLlmClient, type LlmClient, type LlmUsage } from "./llm-client.js";
+import { isManualCommand, runManualCommand, type UserLanguage } from "./manual-commands.js";
 import { buildPatchPreview, hashContent } from "./patch-utils.js";
 import { generateFileExplanation, generateRepoOverview } from "./repo-intelligence.js";
 import { buildRepoGraph } from "./repo-graph.js";
@@ -16,16 +16,83 @@ type SessionRecord = {
   id: string;
   repoPath: string;
   createdAt: string;
+  usage: LlmUsage;
 };
 
 const sessionStore = new Map<string, SessionRecord>();
+
+type UsagePricing = {
+  inputUsdPer1M: number;
+  outputUsdPer1M: number;
+  usdToEur: number;
+};
+
+function parseBoundedNumber(raw: string | undefined, fallback: number, min: number, max: number): number {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+const usagePricing: UsagePricing = {
+  inputUsdPer1M: parseBoundedNumber(process.env.LLM_PRICE_INPUT_USD_PER_1M, 0.4, 0, 100),
+  outputUsdPer1M: parseBoundedNumber(process.env.LLM_PRICE_OUTPUT_USD_PER_1M, 1.6, 0, 100),
+  usdToEur: parseBoundedNumber(process.env.USD_TO_EUR, 0.92, 0.2, 2)
+};
+
+function emptyUsage(): LlmUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    requests: 0
+  };
+}
+
+function mergeUsage(base: LlmUsage, delta: LlmUsage | null | undefined): LlmUsage {
+  if (!delta) {
+    return base;
+  }
+  const merged: LlmUsage = {
+    inputTokens: Math.max(0, Math.round(base.inputTokens + (delta.inputTokens || 0))),
+    outputTokens: Math.max(0, Math.round(base.outputTokens + (delta.outputTokens || 0))),
+    totalTokens: Math.max(0, Math.round(base.totalTokens + (delta.totalTokens || 0))),
+    requests: Math.max(0, Math.round(base.requests + (delta.requests || 0)))
+  };
+  if (delta.model) {
+    merged.model = delta.model;
+  } else if (base.model) {
+    merged.model = base.model;
+  }
+  return merged;
+}
+
+function estimateUsageCostEur(usage: LlmUsage, pricing: UsagePricing): number {
+  const usd =
+    (usage.inputTokens / 1_000_000) * pricing.inputUsdPer1M +
+    (usage.outputTokens / 1_000_000) * pricing.outputUsdPer1M;
+  return Math.max(0, usd * pricing.usdToEur);
+}
+
+function usagePayload(usage: LlmUsage, pricing: UsagePricing) {
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    requests: usage.requests,
+    costApproxEur: Number(estimateUsageCostEur(usage, pricing).toFixed(6))
+  };
+}
+
+const languageSchema = z.enum(["fr", "en"]).optional().default("fr");
 
 const createSessionSchema = z.object({
   repoPath: z.string().min(1)
 });
 
 const chatSchema = z.object({
-  message: z.string().min(1)
+  message: z.string().min(1),
+  lang: languageSchema
 });
 
 const sessionIdParamsSchema = z.object({
@@ -52,14 +119,16 @@ const applyPatchSchema = z.object({
 
 const repoGraphSchema = z.object({
   rootPath: z.string().min(1).max(500).optional().default("."),
-  maxNodes: z.number().int().min(20).max(400).optional().default(180)
+  maxNodes: z.number().int().min(20).max(400).optional().default(180),
+  lang: languageSchema
 });
 
 const explainFileSchema = z.object({
   path: z.string().min(1).max(500),
   rootPath: z.string().min(1).max(500).optional().default("."),
   maxNodes: z.number().int().min(20).max(400).optional().default(220),
-  trailPaths: z.array(z.string().min(1).max(500)).max(12).optional().default([])
+  trailPaths: z.array(z.string().min(1).max(500)).max(12).optional().default([]),
+  lang: languageSchema
 });
 
 export type BuildServerOptions = {
@@ -93,30 +162,41 @@ async function runAssistantMessage(
   repository: LocalRepository,
   message: string,
   llmClient: LlmClient | null,
-  commandPolicy: CommandPolicy
-): Promise<{ reply: string; mode: "manual" | "agent"; steps: unknown[] }> {
+  commandPolicy: CommandPolicy,
+  language: UserLanguage
+): Promise<{ reply: string; mode: "manual" | "agent"; steps: unknown[]; usage: LlmUsage }> {
   if (isManualCommand(message)) {
-    const reply = await runManualCommand(repository, message, commandPolicy);
-    return { reply, mode: "manual", steps: [] };
+    const reply = await runManualCommand(repository, message, commandPolicy, language);
+    return { reply, mode: "manual", steps: [], usage: emptyUsage() };
   }
 
   if (!llmClient) {
+    const noLlmMessage =
+      language === "en"
+        ? [
+            "LLM mode is not configured.",
+            "Set LLM_API_KEY + LLM_MODEL + LLM_BASE_URL to enable autonomous agent mode.",
+            "Meanwhile, use /help for manual commands."
+          ]
+        : [
+            "Mode LLM non configure.",
+            "Configure LLM_API_KEY + LLM_MODEL + LLM_BASE_URL pour activer l'agent autonome.",
+            "En attendant, utilise /help pour les commandes manuelles."
+          ];
     return {
-      reply: [
-        "Mode LLM non configure.",
-        "Configure LLM_API_KEY + LLM_MODEL + LLM_BASE_URL pour activer l'agent autonome.",
-        "En attendant, utilise /help pour les commandes manuelles."
-      ].join("\n"),
+      reply: noLlmMessage.join("\n"),
       mode: "manual",
-      steps: []
+      steps: [],
+      usage: emptyUsage()
     };
   }
 
-  const result = await runAgentWithTools(repository, message, llmClient, commandPolicy);
+  const result = await runAgentWithTools(repository, message, llmClient, commandPolicy, language);
   return {
     reply: result.reply,
     mode: "agent",
-    steps: result.steps
+    steps: result.steps,
+    usage: result.usage
   };
 }
 
@@ -172,7 +252,8 @@ export async function buildServer(options: BuildServerOptions = {}) {
     const record: SessionRecord = {
       id,
       repoPath,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      usage: emptyUsage()
     };
     sessionStore.set(id, record);
 
@@ -208,13 +289,17 @@ export async function buildServer(options: BuildServerOptions = {}) {
         repository,
         body.data.message,
         llmClient,
-        commandPolicy
+        commandPolicy,
+        body.data.lang
       );
+      session.usage = mergeUsage(session.usage, assistant.usage);
       return {
         sessionId: session.id,
         mode: assistant.mode,
         steps: assistant.steps,
-        reply: assistant.reply
+        reply: assistant.reply,
+        usage: usagePayload(assistant.usage, usagePricing),
+        sessionUsage: usagePayload(session.usage, usagePricing)
       };
     } catch (error) {
       return reply.status(500).send({
@@ -263,13 +348,16 @@ export async function buildServer(options: BuildServerOptions = {}) {
         repository,
         body.data.message,
         llmClient,
-        commandPolicy
+        commandPolicy,
+        body.data.lang
       );
+      session.usage = mergeUsage(session.usage, assistant.usage);
 
       writeEvent({
         type: "meta",
         sessionId: session.id,
-        mode: assistant.mode
+        mode: assistant.mode,
+        usage: usagePayload(assistant.usage, usagePricing)
       });
 
       for (const chunk of splitReplyForStream(assistant.reply)) {
@@ -282,7 +370,9 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
       writeEvent({
         type: "done",
-        steps: assistant.steps
+        steps: assistant.steps,
+        usage: usagePayload(assistant.usage, usagePricing),
+        sessionUsage: usagePayload(session.usage, usagePricing)
       });
     } catch (error) {
       writeEvent({
@@ -484,12 +574,15 @@ export async function buildServer(options: BuildServerOptions = {}) {
         body.data.rootPath,
         body.data.maxNodes
       );
-      const overview = await generateRepoOverview(repository, llmClient, graph);
+      const overview = await generateRepoOverview(repository, llmClient, graph, body.data.lang);
+      session.usage = mergeUsage(session.usage, overview.usage);
       return {
         sessionId: session.id,
         mode: overview.mode,
         summary: graph.summary,
-        overview: overview.overview
+        overview: overview.overview,
+        usage: usagePayload(overview.usage ?? emptyUsage(), usagePricing),
+        sessionUsage: usagePayload(session.usage, usagePricing)
       };
     } catch (error) {
       return reply.status(400).send({
@@ -543,14 +636,18 @@ export async function buildServer(options: BuildServerOptions = {}) {
         llmClient,
         body.data.path,
         graph,
-        body.data.trailPaths
+        body.data.trailPaths,
+        body.data.lang
       );
+      session.usage = mergeUsage(session.usage, explained.usage);
 
       return {
         sessionId: session.id,
         path: body.data.path,
         mode: explained.mode,
-        explanation: explained.explanation
+        explanation: explained.explanation,
+        usage: usagePayload(explained.usage ?? emptyUsage(), usagePricing),
+        sessionUsage: usagePayload(session.usage, usagePricing)
       };
     } catch (error) {
       return reply.status(400).send({
