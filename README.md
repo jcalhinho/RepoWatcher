@@ -1,5 +1,7 @@
 # RepoWatcher
 
+![RepoWatcher illustration](./pic.png)
+
 Assistant local d'exploration de dépôt (FR/EN): cartographier un repo, visualiser les interactions entre fichiers, identifier les zones sensibles, et obtenir des explications IA contextualisées.
 
 Local repository exploration assistant (FR/EN): map a repo, visualize file interactions, identify sensitive areas, and get contextual AI explanations.
@@ -30,13 +32,16 @@ The goal of RepoWatcher is to **reduce codebase understanding time** (onboarding
 6. [Installation](#installation)
 7. [Démarrage rapide](#démarrage-rapide)
 8. [Configuration](#configuration)
-9. [Utilisation](#utilisation)
-10. [API HTTP](#api-http)
-11. [Sécurité et garde-fous](#sécurité-et-garde-fous)
-12. [Développement et qualité](#développement-et-qualité)
-13. [Dépannage](#dépannage)
-14. [Limites actuelles](#limites-actuelles)
-15. [Licence](#licence)
+9. [Mode sans IA (fallback local)](#mode-sans-ia-fallback-local)
+10. [Langues supportees](#langues-supportees)
+11. [Langages et types de fichiers pris en charge](#langages-et-types-de-fichiers-pris-en-charge)
+12. [Utilisation](#utilisation)
+13. [API HTTP](#api-http)
+14. [Sécurité et garde-fous](#sécurité-et-garde-fous)
+15. [Développement et qualité](#développement-et-qualité)
+16. [Dépannage](#dépannage)
+17. [Limites actuelles](#limites-actuelles)
+18. [Licence](#licence)
 
 ---
 
@@ -261,6 +266,62 @@ export LLM_BASE_URL="<chat-completions-endpoint>"
 export LLM_TIMEOUT_MS="30000"
 npm run --workspace @repo-watcher/api dev
 ```
+
+---
+
+## Mode sans IA (fallback local)
+
+Si les variables `LLM_API_KEY`, `LLM_MODEL` et `LLM_BASE_URL` ne sont pas définies:
+
+- aucun appel LLM externe n'est effectué,
+- le chat reste disponible en mode manuel (`/help`, `/list`, `/read`, `/search`, `/run`),
+- un message non slash dans le chat renvoie explicitement que le mode LLM n'est pas configuré,
+- `repo_overview` fonctionne en mode `heuristic`,
+- `explain_file` fonctionne en mode `heuristic`,
+- les compteurs de tokens/coût de session restent à `0`.
+
+Ce mode permet d'utiliser RepoWatcher entièrement en local pour la cartographie, la navigation et les explications heuristiques.
+
+---
+
+## Langues supportees
+
+- UI: `fr` ou `en` (sélecteur en barre supérieure).
+- API: le champ `lang` accepte `fr` ou `en` sur les endpoints chat/graphe/overview/explain.
+- Valeur par défaut API: `fr` (si `lang` absent).
+- Les réponses heuristiques respectent la langue demandée.
+- En mode LLM, la langue demandée est aussi imposée dans les prompts de génération.
+
+---
+
+## Langages et types de fichiers pris en charge
+
+### Fichiers source indexés dans le graphe
+
+Le graphe indexe les fichiers source suivants:
+
+- JavaScript/TypeScript: `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`
+- Python: `.py`
+- JVM: `.java`, `.kt`, `.kts`, `.scala`, `.groovy`
+- Go: `.go`
+- Rust: `.rs`
+- .NET: `.cs`, `.fs`, `.vb`
+- C/C++/Obj-C: `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hh`, `.hpp`, `.hxx`, `.m`, `.mm`
+- Scripts: `.php`, `.rb`, `.lua`, `.pl`, `.pm`, `.sh`, `.bash`, `.zsh`
+- Mobile: `.swift`, `.dart`
+- Langages fonctionnels: `.ex`, `.exs`, `.erl`, `.hrl`, `.hs`, `.ml`, `.mli`, `.clj`, `.cljs`
+- Data/numérique: `.r`, `.jl`
+
+### Fichiers de configuration intégrés au graphe
+
+RepoWatcher inclut aussi des fichiers de configuration (par nom exact, extension, et heuristique de chemin), par exemple:
+
+- extensions: `.json`, `.jsonc`, `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, `.conf`, `.properties`, `.env`, `.xml`
+- fichiers connus: `package.json`, `tsconfig.json`, `go.mod`, `pom.xml`, `build.gradle(.kts)`, `application.yml`, `appsettings.json`, `docker-compose.yml`, `pyproject.toml`, `requirements.txt`, `.env*`, `vite/webpack/rollup/tailwind/postcss config`, etc.
+
+### Exclusions (listing/recherche locale)
+
+Pour éviter le bruit, certains dossiers/fichiers sont ignorés (`node_modules`, `dist`, `build`, `.next`, `.nuxt`, `.svelte-kit`, `coverage`, caches Python, etc.) ainsi que plusieurs suffixes binaires/media (`.png`, `.jpg`, `.pdf`, `.zip`, `.dll`, `.so`, ...).
 
 ---
 
