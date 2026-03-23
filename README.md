@@ -463,6 +463,7 @@ Payload:
 - Politique **deny-by-default** (allowlist stricte).
 - Exemples autorisés:
   - `ls -la`
+  - `ls -la | grep -E <pattern>`
   - `npm test`, `npm run lint`, `npm run build`
   - `cat <relative_file>`
   - `head -n <1..500> <relative_file>`

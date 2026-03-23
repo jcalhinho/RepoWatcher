@@ -105,6 +105,44 @@ function isSafeReadSliceCommand(command: Command): boolean {
   );
 }
 
+function isSafeListCommand(command: Command): boolean {
+  if (command.length === 2 && command[0] === "ls" && command[1] === "-la") {
+    return true;
+  }
+
+  return (
+    command.length === 3 &&
+    command[0] === "ls" &&
+    command[1] === "-la" &&
+    isSafeRelativePathToken(command[2])
+  );
+}
+
+function stripOptionalQuotes(token: string): string {
+  if (
+    token.length >= 2 &&
+    ((token.startsWith("'") && token.endsWith("'")) ||
+      (token.startsWith('"') && token.endsWith('"')))
+  ) {
+    return token.slice(1, -1);
+  }
+
+  return token;
+}
+
+function normalizeCommandTokens(command: Command): Command {
+  return command.map((token) => (token === "|" ? token : stripOptionalQuotes(token)));
+}
+
+function isSafeGrepPatternToken(token: string): boolean {
+  const normalized = stripOptionalQuotes(token);
+  if (normalized.length === 0 || normalized.length > 120) {
+    return false;
+  }
+
+  return /^[a-zA-Z0-9._:@+|^*?()[\]-]+$/.test(normalized);
+}
+
 function splitPipeline(command: Command): Command[] | null {
   const segments: Command[] = [];
   let segmentStart = 0;
@@ -148,6 +186,41 @@ function isSafeReadPipelineCommand(command: Command): boolean {
     }
   }
   return true;
+}
+
+function isSafeListFilterPipelineCommand(command: Command): boolean {
+  const segments = splitPipeline(command);
+  if (!segments || segments.length !== 2) {
+    return false;
+  }
+
+  const [listSegment, filterSegment] = segments;
+  if (!isSafeListCommand(listSegment)) {
+    return false;
+  }
+
+  if (filterSegment.length === 2) {
+    return filterSegment[0] === "grep" && isSafeGrepPatternToken(filterSegment[1]);
+  }
+
+  if (filterSegment.length === 3) {
+    return (
+      filterSegment[0] === "grep" &&
+      (filterSegment[1] === "-E" || filterSegment[1] === "-i") &&
+      isSafeGrepPatternToken(filterSegment[2])
+    );
+  }
+
+  if (filterSegment.length === 4) {
+    return (
+      filterSegment[0] === "grep" &&
+      ((filterSegment[1] === "-E" && filterSegment[2] === "-i") ||
+        (filterSegment[1] === "-i" && filterSegment[2] === "-E")) &&
+      isSafeGrepPatternToken(filterSegment[3])
+    );
+  }
+
+  return false;
 }
 
 function isPowerShellBinary(token: string): boolean {
@@ -194,7 +267,7 @@ function isSafeWindowsReadCommand(command: Command): boolean {
 
 export function createDefaultCommandPolicy(): CommandPolicy {
   const rules: CommandRule[] = [
-    ["ls", "-la"],
+    isSafeListCommand,
     ["npm", "test"],
     ["npm", "run", "lint"],
     ["npm", "run", "build"],
@@ -205,7 +278,8 @@ export function createDefaultCommandPolicy(): CommandPolicy {
     ["yarn", "lint"],
     ["yarn", "build"],
     isSafeReadCommand,
-    isSafeReadPipelineCommand
+    isSafeReadPipelineCommand,
+    isSafeListFilterPipelineCommand
   ];
 
   if (process.platform === "win32") {
@@ -303,9 +377,10 @@ export async function runAllowedCommand(
     throw new Error(`Command is not allowed: ${command.join(" ")}`);
   }
 
-  const pipeline = splitPipeline(command);
+  const normalizedCommand = normalizeCommandTokens(command);
+  const pipeline = splitPipeline(normalizedCommand);
   if (!pipeline) {
-    return spawnCommand(repoRoot, command, timeoutMs);
+    return spawnCommand(repoRoot, normalizedCommand, timeoutMs);
   }
 
   let pipedStdout = "";

@@ -38,9 +38,16 @@ describe("createDefaultCommandPolicy", () => {
       true
     );
     expect(policy.isAllowed(["cat", "README.md", "|", "tail", "-n", "20"])).toBe(true);
+    expect(
+      policy.isAllowed(["ls", "-la", "|", "grep", "-E", "eslint|prettier|rustfmt|clippy"])
+    ).toBe(true);
+    expect(
+      policy.isAllowed(["ls", "-la", "|", "grep", "-E", "'eslint|prettier|rustfmt|clippy'"])
+    ).toBe(true);
     expect(policy.isAllowed(["tail", "-n", "9999", "README.md"])).toBe(false);
     expect(policy.isAllowed(["tail", "-n", "20", "../secret.txt"])).toBe(false);
     expect(policy.isAllowed(["cat", "/etc/passwd"])).toBe(false);
+    expect(policy.isAllowed(["ls", "-la", "|", "grep", "-E", "eslint;rm-rf"])).toBe(false);
     expect(policy.isAllowed(["head", "-n", "20", "README.md", "|", "grep", "todo"])).toBe(false);
     expect(policy.isAllowed(["bash", "-lc", "rm -rf /"])).toBe(false);
 
@@ -82,5 +89,29 @@ describe("createDefaultCommandPolicy", () => {
       "line-79",
       "line-80"
     ]);
+  });
+
+  it("runs safe ls|grep filter pipelines without shell", async () => {
+    const policy = createDefaultCommandPolicy();
+    const root = await mkdtemp(path.join(os.tmpdir(), "repo-watcher-policy-ls-grep-test-"));
+    await writeFile(path.join(root, "eslint.config.js"), "export default {};\n", "utf8");
+    await writeFile(path.join(root, "README.md"), "# test\n", "utf8");
+
+    const result = await runAllowedCommand(
+      root,
+      ["ls", "-la", "|", "grep", "-E", "eslint|prettier|rustfmt|clippy"],
+      policy
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toLowerCase()).toContain("eslint.config.js");
+
+    const quoted = await runAllowedCommand(
+      root,
+      ["ls", "-la", "|", "grep", "-E", "'eslint|prettier|rustfmt|clippy'"],
+      policy
+    );
+    expect(quoted.exitCode).toBe(0);
+    expect(quoted.stdout.toLowerCase()).toContain("eslint.config.js");
   });
 });

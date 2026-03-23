@@ -644,6 +644,7 @@ function App() {
     requests: 0,
     costApproxEur: 0
   });
+  const [sessionUserMessages, setSessionUserMessages] = useState(0);
   const [fileViewerContent, setFileViewerContent] = useState("");
   const [fileViewerLoading, setFileViewerLoading] = useState(false);
   const [fileViewerError, setFileViewerError] = useState("");
@@ -742,6 +743,8 @@ function App() {
             chatCostInput: "input",
             chatCostOutput: "output",
             chatCostRequests: "requests",
+            chatCostLlmCalls: "LLM calls",
+            chatCostUserMessages: "user messages",
             repoPath: "Local repo path",
             language: "Language",
             languageFrench: "French",
@@ -853,6 +856,8 @@ function App() {
             chatCostInput: "input",
             chatCostOutput: "output",
             chatCostRequests: "demandes",
+            chatCostLlmCalls: "appels LLM",
+            chatCostUserMessages: "messages utilisateur",
             repoPath: "Chemin du repo local",
             language: "Langue",
             languageFrench: "Francais",
@@ -1249,6 +1254,7 @@ function App() {
         requests: 0,
         costApproxEur: 0
       });
+      setSessionUserMessages(0);
       state.sessionId = payload.id;
       setStatus(setStatusState, t("sessionCreated") + ": " + payload.id, "ok");
       addChatMessage(createMessage("system", t("sessionOpenedOn") + " " + pathValue, "session"));
@@ -1548,6 +1554,7 @@ function App() {
     if (!messageText) return;
     setChatInput("");
     setChatSending(true);
+    setSessionUserMessages((previous) => previous + 1);
     addChatMessage(createMessage("user", messageText, "you"));
     const assistant = createMessage("assistant", "", "stream", true);
     addChatMessage(assistant);
@@ -1642,9 +1649,10 @@ function App() {
       `~${eur.format(Number(sessionUsage.costApproxEur || 0))} ${t("chatCostEur")} · ` +
       `${t("chatCostInput")}: ${num.format(Number(sessionUsage.inputTokens || 0))} · ` +
       `${t("chatCostOutput")}: ${num.format(Number(sessionUsage.outputTokens || 0))} · ` +
-      `${t("chatCostRequests")}: ${num.format(Number(sessionUsage.requests || 0))}`
+      `${t("chatCostLlmCalls")}: ${num.format(Number(sessionUsage.requests || 0))} · ` +
+      `${t("chatCostUserMessages")}: ${num.format(sessionUserMessages)}`
     );
-  }, [localeTag, sessionUsage, t]);
+  }, [localeTag, sessionUsage, sessionUserMessages, t]);
 
   const fileViewerLineCount = useMemo(
     () => (fileViewerContent ? fileViewerContent.split(/\r?\n/).length : 0),
