@@ -21,6 +21,10 @@ export type LlmCompletion = {
 export interface LlmClient {
   complete(messages: LlmMessage[]): Promise<string>;
   completeWithUsage(messages: LlmMessage[]): Promise<LlmCompletion>;
+  completeWithUsageStream(
+    messages: LlmMessage[],
+    onDelta: (chunk: string) => void
+  ): Promise<LlmCompletion>;
 }
 
 const envSchema = z.object({
@@ -53,6 +57,9 @@ type ChatCompletionsResponse = {
     output_tokens?: number;
   };
   choices?: Array<{
+    delta?: {
+      content?: string | null;
+    };
     message?: {
       content?: string | null;
     };
@@ -115,29 +122,165 @@ class ChatCompletionsLlmClient implements LlmClient {
     return completion.content;
   }
 
+  private buildRequestBody(messages: LlmMessage[], includeJsonResponseFormat: boolean): string {
+    const payload: Record<string, unknown> = {
+      model: this.model,
+      temperature: 0.1,
+      messages
+    };
+    if (includeJsonResponseFormat) {
+      payload.response_format = { type: "json_object" };
+    }
+    return JSON.stringify(payload);
+  }
+
+  private shouldRetryWithoutJsonResponseFormat(status: number, details: string): boolean {
+    if (status !== 400 && status !== 422) {
+      return false;
+    }
+    return /(response_format|json_object|unsupported|unknown field|invalid request|schema)/i.test(
+      details
+    );
+  }
+
+  private async requestCompletion(
+    messages: LlmMessage[],
+    includeJsonResponseFormat: boolean,
+    controller: AbortController
+  ): Promise<Response> {
+    return fetch(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.apiKey}`
+      },
+      body: this.buildRequestBody(messages, includeJsonResponseFormat)
+    });
+  }
+
+  private async requestCompletionStream(
+    messages: LlmMessage[],
+    includeJsonResponseFormat: boolean,
+    controller: AbortController
+  ): Promise<Response> {
+    const payload: Record<string, unknown> = {
+      model: this.model,
+      temperature: 0.1,
+      messages,
+      stream: true,
+      stream_options: { include_usage: true }
+    };
+    if (includeJsonResponseFormat) {
+      payload.response_format = { type: "json_object" };
+    }
+    return fetch(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(payload)
+    });
+  }
+
+  private async parseSseCompletion(
+    response: Response,
+    onDelta: (chunk: string) => void
+  ): Promise<LlmCompletion> {
+    if (!response.body) {
+      throw new Error("LLM streaming response body is missing");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let content = "";
+    let usage: LlmUsage | null = null;
+
+    const processDataLine = (line: string) => {
+      if (!line.startsWith("data:")) {
+        return;
+      }
+      const data = line.slice("data:".length).trim();
+      if (!data || data === "[DONE]") {
+        return;
+      }
+
+      let payload: ChatCompletionsResponse;
+      try {
+        payload = JSON.parse(data) as ChatCompletionsResponse;
+      } catch {
+        return;
+      }
+
+      const delta = payload.choices?.[0]?.delta?.content ?? payload.choices?.[0]?.message?.content;
+      if (typeof delta === "string" && delta.length > 0) {
+        content += delta;
+        onDelta(delta);
+      }
+
+      const extractedUsage = this.extractUsage(payload);
+      if (extractedUsage) {
+        usage = extractedUsage;
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+      for (const eventBlock of events) {
+        const lines = eventBlock
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+        for (const line of lines) {
+          processDataLine(line);
+        }
+      }
+    }
+
+    if (buffer.trim().length > 0) {
+      const lines = buffer
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      for (const line of lines) {
+        processDataLine(line);
+      }
+    }
+
+    if (!content) {
+      throw new Error("LLM streaming response missing message content");
+    }
+
+    return { content, usage };
+  }
+
   async completeWithUsage(messages: LlmMessage[]): Promise<LlmCompletion> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0.1,
-          response_format: { type: "json_object" },
-          messages
-        })
-      });
-
+      let response = await this.requestCompletion(messages, true, controller);
       if (!response.ok) {
         const details = await response.text().catch(() => "");
-        throw new Error(`LLM request failed (${response.status}): ${details.slice(0, 400)}`);
+        if (this.shouldRetryWithoutJsonResponseFormat(response.status, details)) {
+          response = await this.requestCompletion(messages, false, controller);
+        } else {
+          throw new Error(`LLM request failed (${response.status}): ${details.slice(0, 400)}`);
+        }
+      }
+
+      if (!response.ok) {
+        const retryDetails = await response.text().catch(() => "");
+        throw new Error(`LLM request failed (${response.status}): ${retryDetails.slice(0, 400)}`);
       }
 
       const payload = (await response.json()) as ChatCompletionsResponse;
@@ -150,6 +293,42 @@ class ChatCompletionsLlmClient implements LlmClient {
         content,
         usage: this.extractUsage(payload)
       };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async completeWithUsageStream(
+    messages: LlmMessage[],
+    onDelta: (chunk: string) => void
+  ): Promise<LlmCompletion> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      let response = await this.requestCompletionStream(messages, true, controller);
+      if (!response.ok) {
+        const details = await response.text().catch(() => "");
+        if (this.shouldRetryWithoutJsonResponseFormat(response.status, details)) {
+          response = await this.requestCompletionStream(messages, false, controller);
+        } else {
+          throw new Error(`LLM request failed (${response.status}): ${details.slice(0, 400)}`);
+        }
+      }
+
+      if (!response.ok) {
+        const retryDetails = await response.text().catch(() => "");
+        throw new Error(`LLM request failed (${response.status}): ${retryDetails.slice(0, 400)}`);
+      }
+
+      return await this.parseSseCompletion(response, onDelta);
+    } catch (error) {
+      // Provider streaming may be unsupported; fallback to non-streaming completion.
+      const completion = await this.completeWithUsage(messages);
+      if (completion.content) {
+        onDelta(completion.content);
+      }
+      return completion;
     } finally {
       clearTimeout(timeout);
     }

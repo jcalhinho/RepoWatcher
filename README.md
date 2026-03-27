@@ -182,6 +182,8 @@ Les deux endpoints fonctionnent:
 
 - `chat`: réponse complète en une fois.
 - `chat/stream`: flux NDJSON (`meta`, `delta`, `done`, `error`).
+  - En mode agent, les `delta` proviennent du streaming SSE du provider LLM (quand disponible).
+  - En mode manuel/sans LLM, la réponse est envoyée en un seul `delta`.
 
 ### 5) Édition supervisée
 
@@ -247,6 +249,7 @@ npm run --workspace @repo-watcher/worker dev
 |---|---|---|---|
 | `HOST` | non | `127.0.0.1` | Host Fastify |
 | `PORT` | non | `8787` | Port Fastify |
+| `REPO_WATCHER_PATCH_TOKEN` | non | - | Token optionnel pour protéger `POST /apply_patch` (header `x-repo-watcher-token` ou `Authorization: Bearer <token>`) |
 
 ### Variables d'environnement LLM (mode agent)
 
@@ -535,6 +538,7 @@ npm run --workspace @repo-watcher/core build
 - Worker encore au stade scaffold.
 - Certaines relations (`flow`, `api`, `config`) sont heuristiques.
 - UI frontend servie en statique (pas de pipeline build frontend dédié).
+- Le streaming dépend des capacités du provider configuré sur `LLM_BASE_URL` (fallback non-stream si indisponible).
 
 ---
 

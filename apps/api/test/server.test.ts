@@ -42,6 +42,17 @@ class FakeLlmClient implements LlmClient {
       }
     };
   }
+
+  async completeWithUsageStream(
+    _messages: LlmMessage[],
+    onDelta: (chunk: string) => void
+  ): Promise<LlmCompletion> {
+    const completion = await this.completeWithUsage(_messages);
+    if (completion.content) {
+      onDelta(completion.content);
+    }
+    return completion;
+  }
 }
 
 const serversToClose: Array<Awaited<ReturnType<typeof buildServer>>> = [];
@@ -365,8 +376,40 @@ describe("API chat modes", () => {
       .map((line) => JSON.parse(line) as { type: string; mode?: string; text?: string });
 
     expect(events.length).toBeGreaterThan(2);
-    expect(events[0]).toMatchObject({ type: "meta", mode: "manual" });
+    const metaEvents = events.filter((event) => event.type === "meta");
+    expect(metaEvents[0]).toMatchObject({ type: "meta", mode: "starting" });
+    expect(metaEvents.some((event) => event.mode === "manual")).toBe(true);
     expect(events.some((event) => event.type === "delta" && (event.text || "").length > 0)).toBe(true);
+    expect(events[events.length - 1]).toMatchObject({ type: "done" });
+  });
+
+  it("streams provider deltas from final JSON field in agent mode", async () => {
+    const repoPath = await createLocalRepoFixture();
+    const fakeLlm = new FakeLlmClient([JSON.stringify({ final: "Analyse terminee." })]);
+    const server = await buildServer({ llmClient: fakeLlm });
+    serversToClose.push(server);
+
+    const sessionResponse = await server.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { repoPath }
+    });
+    const sessionPayload = sessionResponse.json() as { id: string };
+
+    const streamResponse = await server.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionPayload.id}/chat/stream`,
+      payload: { message: "donne un resume", lang: "fr" }
+    });
+
+    expect(streamResponse.statusCode).toBe(200);
+    const events = streamResponse.body
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as { type: string; text?: string; mode?: string });
+
+    const deltas = events.filter((event) => event.type === "delta").map((event) => event.text || "");
+    expect(deltas.join("")).toContain("Analyse terminee.");
     expect(events[events.length - 1]).toMatchObject({ type: "done" });
   });
 
@@ -445,6 +488,55 @@ describe("API chat modes", () => {
 
     const diskContent = await readFile(path.join(repoPath, "README.md"), "utf8");
     expect(diskContent).toBe(newContent);
+  });
+
+  it("protects apply_patch when REPO_WATCHER_PATCH_TOKEN is configured", async () => {
+    const repoPath = await createLocalRepoFixture();
+    const previousToken = process.env.REPO_WATCHER_PATCH_TOKEN;
+    process.env.REPO_WATCHER_PATCH_TOKEN = "test-patch-token";
+
+    try {
+      const server = await buildServer();
+      serversToClose.push(server);
+
+      const sessionResponse = await server.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { repoPath }
+      });
+      const sessionPayload = sessionResponse.json() as { id: string };
+
+      const forbiddenResponse = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionPayload.id}/apply_patch`,
+        payload: {
+          path: "README.md",
+          newContent: "denied\n",
+          apply: false
+        }
+      });
+      expect(forbiddenResponse.statusCode).toBe(403);
+
+      const allowedResponse = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionPayload.id}/apply_patch`,
+        headers: {
+          "x-repo-watcher-token": "test-patch-token"
+        },
+        payload: {
+          path: "README.md",
+          newContent: "allowed\n",
+          apply: false
+        }
+      });
+      expect(allowedResponse.statusCode).toBe(200);
+    } finally {
+      if (previousToken === undefined) {
+        delete process.env.REPO_WATCHER_PATCH_TOKEN;
+      } else {
+        process.env.REPO_WATCHER_PATCH_TOKEN = previousToken;
+      }
+    }
   });
 
   it("builds a react-flow compatible repo graph", async () => {

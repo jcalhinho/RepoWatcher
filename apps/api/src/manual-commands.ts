@@ -63,7 +63,7 @@ export async function runManualCommand(
     const parts = tokenize(message);
     const relativePath = parts[1];
     if (!relativePath) {
-      return inEnglish ? "Usage: /read <path>" : "Usage: /read <path>";
+      return txt("Usage: /read <chemin>", "Usage: /read <path>");
     }
 
     const content = await repo.readTextFile(relativePath, 100_000);

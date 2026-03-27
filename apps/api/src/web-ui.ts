@@ -20,8 +20,9 @@ function resolveUiDir(): string {
   return found;
 }
 
-const uiDir = resolveUiDir();
 const uiFileCache = new Map<string, string>();
+let resolvedUiDir: string | null = null;
+let uiDirResolutionAttempted = false;
 
 const uiAssetContentTypes: Record<string, string> = {
   "app.css": "text/css; charset=utf-8",
@@ -34,6 +35,11 @@ function readUiFile(fileName: string): string {
     return cached;
   }
 
+  if (!uiDirResolutionAttempted) {
+    resolvedUiDir = resolveUiDir();
+    uiDirResolutionAttempted = true;
+  }
+  const uiDir = resolvedUiDir ?? resolveUiDir();
   const filePath = path.join(uiDir, fileName);
   const content = readFileSync(filePath, "utf8");
   uiFileCache.set(fileName, content);

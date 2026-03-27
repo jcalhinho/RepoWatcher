@@ -9,7 +9,7 @@ import { createEnvLlmClient, type LlmClient, type LlmUsage } from "./llm-client.
 import { isManualCommand, runManualCommand, type UserLanguage } from "./manual-commands.js";
 import { buildPatchPreview, hashContent } from "./patch-utils.js";
 import { generateFileExplanation, generateRepoOverview } from "./repo-intelligence.js";
-import { buildRepoGraph } from "./repo-graph.js";
+import { buildRepoGraph, type RepoGraph } from "./repo-graph.js";
 import { getWebUiAsset, getWebUiHtml } from "./web-ui.js";
 
 type SessionRecord = {
@@ -17,6 +17,11 @@ type SessionRecord = {
   repoPath: string;
   createdAt: string;
   usage: LlmUsage;
+  graphCache?: {
+    rootPath: string;
+    maxNodes: number;
+    graph: RepoGraph;
+  };
 };
 
 const sessionStore = new Map<string, SessionRecord>();
@@ -143,19 +148,62 @@ function clampPreview(content: string, maxChars = 12_000): string {
   return `${content.slice(0, maxChars)}\n...[truncated]`;
 }
 
-function splitReplyForStream(reply: string, chunkSize = 48): string[] {
-  if (!reply) {
-    return [];
+function patchAccessToken(): string | null {
+  const raw = process.env.REPO_WATCHER_PATCH_TOKEN;
+  if (!raw) {
+    return null;
   }
-  const chunks: string[] = [];
-  for (let index = 0; index < reply.length; index += chunkSize) {
-    chunks.push(reply.slice(index, index + chunkSize));
-  }
-  return chunks;
+  const token = raw.trim();
+  return token.length > 0 ? token : null;
 }
 
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+function normalizeHeaderValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+  return typeof value === "string" ? value : "";
+}
+
+function isPatchRequestAuthorized(headers: {
+  authorization?: string | string[];
+  "x-repo-watcher-token"?: string | string[];
+}): boolean {
+  const requiredToken = patchAccessToken();
+  if (!requiredToken) {
+    return true;
+  }
+
+  const directToken = normalizeHeaderValue(headers["x-repo-watcher-token"]);
+  if (directToken === requiredToken) {
+    return true;
+  }
+
+  const authorization = normalizeHeaderValue(headers.authorization);
+  if (authorization.startsWith("Bearer ")) {
+    return authorization.slice("Bearer ".length).trim() === requiredToken;
+  }
+
+  return false;
+}
+
+async function getOrBuildGraph(
+  session: SessionRecord,
+  repository: LocalRepository,
+  rootPath: string,
+  maxNodes: number
+): Promise<RepoGraph> {
+  const cache = session.graphCache;
+  if (cache && cache.rootPath === rootPath && cache.maxNodes === maxNodes) {
+    return cache.graph;
+  }
+
+  const graph = await buildRepoGraph(repository, rootPath, maxNodes);
+  session.graphCache = { rootPath, maxNodes, graph };
+  return graph;
+}
+
+function invalidateSessionGraphCache(session: SessionRecord): void {
+  session.graphCache = undefined;
 }
 
 async function runAssistantMessage(
@@ -163,10 +211,14 @@ async function runAssistantMessage(
   message: string,
   llmClient: LlmClient | null,
   commandPolicy: CommandPolicy,
-  language: UserLanguage
+  language: UserLanguage,
+  onReplyDelta?: (chunk: string) => void
 ): Promise<{ reply: string; mode: "manual" | "agent"; steps: unknown[]; usage: LlmUsage }> {
   if (isManualCommand(message)) {
     const reply = await runManualCommand(repository, message, commandPolicy, language);
+    if (onReplyDelta) {
+      onReplyDelta(reply);
+    }
     return { reply, mode: "manual", steps: [], usage: emptyUsage() };
   }
 
@@ -183,15 +235,26 @@ async function runAssistantMessage(
             "Configure LLM_API_KEY + LLM_MODEL + LLM_BASE_URL pour activer l'agent autonome.",
             "En attendant, utilise /help pour les commandes manuelles."
           ];
+    const reply = noLlmMessage.join("\n");
+    if (onReplyDelta) {
+      onReplyDelta(reply);
+    }
     return {
-      reply: noLlmMessage.join("\n"),
+      reply,
       mode: "manual",
       steps: [],
       usage: emptyUsage()
     };
   }
 
-  const result = await runAgentWithTools(repository, message, llmClient, commandPolicy, language);
+  const result = await runAgentWithTools(
+    repository,
+    message,
+    llmClient,
+    commandPolicy,
+    language,
+    onReplyDelta
+  );
   return {
     reply: result.reply,
     mode: "agent",
@@ -341,15 +404,31 @@ export async function buildServer(options: BuildServerOptions = {}) {
     reply.raw.setHeader("Connection", "keep-alive");
     reply.raw.setHeader("X-Accel-Buffering", "no");
     reply.raw.flushHeaders?.();
+    writeEvent({
+      type: "meta",
+      sessionId: session.id,
+      mode: "starting"
+    });
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
+      let emittedAnyDelta = false;
       const assistant = await runAssistantMessage(
         repository,
         body.data.message,
         llmClient,
         commandPolicy,
-        body.data.lang
+        body.data.lang,
+        (chunk) => {
+          if (!chunk) {
+            return;
+          }
+          emittedAnyDelta = true;
+          writeEvent({
+            type: "delta",
+            text: chunk
+          });
+        }
       );
       session.usage = mergeUsage(session.usage, assistant.usage);
 
@@ -360,12 +439,11 @@ export async function buildServer(options: BuildServerOptions = {}) {
         usage: usagePayload(assistant.usage, usagePricing)
       });
 
-      for (const chunk of splitReplyForStream(assistant.reply)) {
+      if (!emittedAnyDelta && assistant.reply) {
         writeEvent({
           type: "delta",
-          text: chunk
+          text: assistant.reply
         });
-        await sleep(12);
       }
 
       writeEvent({
@@ -448,6 +526,12 @@ export async function buildServer(options: BuildServerOptions = {}) {
         error: "Session not found"
       });
     }
+    if (!isPatchRequestAuthorized(request.headers)) {
+      return reply.status(403).send({
+        error: "Patch endpoint is protected",
+        details: "Provide x-repo-watcher-token or Authorization: Bearer <token>."
+      });
+    }
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
@@ -481,6 +565,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
       if (body.data.apply) {
         await repository.writeTextFile(body.data.path, body.data.newContent);
+        invalidateSessionGraphCache(session);
       }
 
       return {
@@ -527,11 +612,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
-      const graph = await buildRepoGraph(
-        repository,
-        body.data.rootPath,
-        body.data.maxNodes
-      );
+      const graph = await getOrBuildGraph(session, repository, body.data.rootPath, body.data.maxNodes);
       return {
         sessionId: session.id,
         ...graph
@@ -569,11 +650,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
-      const graph = await buildRepoGraph(
-        repository,
-        body.data.rootPath,
-        body.data.maxNodes
-      );
+      const graph = await getOrBuildGraph(session, repository, body.data.rootPath, body.data.maxNodes);
       const overview = await generateRepoOverview(repository, llmClient, graph, body.data.lang);
       session.usage = mergeUsage(session.usage, overview.usage);
       return {
@@ -617,11 +694,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
-      const graph = await buildRepoGraph(
-        repository,
-        body.data.rootPath,
-        body.data.maxNodes
-      );
+      const graph = await getOrBuildGraph(session, repository, body.data.rootPath, body.data.maxNodes);
 
       const fileExists = graph.nodes.some((node) => node.data.path === body.data.path);
       if (!fileExists) {

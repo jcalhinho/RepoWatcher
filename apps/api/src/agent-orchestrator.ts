@@ -3,6 +3,8 @@ import { LocalRepository, runAllowedCommand } from "@repo-watcher/core";
 import { z } from "zod";
 import type { LlmClient, LlmMessage, LlmUsage } from "./llm-client.js";
 import type { UserLanguage } from "./manual-commands.js";
+import { extractFirstJsonObject } from "./json-utils.js";
+import { createJsonFinalFieldEmitter } from "./json-final-stream.js";
 
 export type AgentStepTrace = {
   step: number;
@@ -74,28 +76,6 @@ function tokenize(text: string): string[] {
     .trim()
     .split(/\s+/)
     .filter((item) => item.length > 0);
-}
-
-function extractFirstJsonObject(raw: string): string {
-  const start = raw.indexOf("{");
-  if (start < 0) {
-    throw new Error("No JSON object found in LLM output");
-  }
-
-  let depth = 0;
-  for (let index = start; index < raw.length; index += 1) {
-    const char = raw[index];
-    if (char === "{") {
-      depth += 1;
-    } else if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return raw.slice(start, index + 1);
-      }
-    }
-  }
-
-  throw new Error("Unterminated JSON object in LLM output");
 }
 
 function truncate(text: string, maxLength: number): string {
@@ -176,7 +156,8 @@ export async function runAgentWithTools(
   userMessage: string,
   llmClient: LlmClient,
   commandPolicy: CommandPolicy,
-  language: UserLanguage = "fr"
+  language: UserLanguage = "fr",
+  onFinalDelta?: (chunk: string) => void
 ): Promise<AgentRunResult> {
   const usage: LlmUsage = {
     inputTokens: 0,
@@ -205,7 +186,11 @@ export async function runAgentWithTools(
   ];
 
   for (let step = 1; step <= MAX_TOOL_STEPS; step += 1) {
-    const completion = await llmClient.completeWithUsage(messages);
+    const finalEmitter = onFinalDelta ? createJsonFinalFieldEmitter(onFinalDelta) : null;
+    const completion =
+      finalEmitter && typeof llmClient.completeWithUsageStream === "function"
+        ? await llmClient.completeWithUsageStream(messages, (chunk) => finalEmitter.push(chunk))
+        : await llmClient.completeWithUsage(messages);
     accumulateUsage(completion.usage);
     const raw = completion.content;
     const parsedJson = extractFirstJsonObject(raw);

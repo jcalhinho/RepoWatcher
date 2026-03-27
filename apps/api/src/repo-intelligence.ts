@@ -2,8 +2,9 @@ import path from "node:path";
 import { LocalRepository } from "@repo-watcher/core";
 import { z } from "zod";
 import type { LlmClient, LlmUsage } from "./llm-client.js";
-import { buildRepoGraph, type RepoGraph } from "./repo-graph.js";
+import type { RepoGraph } from "./repo-graph.js";
 import type { UserLanguage } from "./manual-commands.js";
+import { extractFirstJsonObject } from "./json-utils.js";
 
 const MAX_FILE_EXPLAIN_CHARS = 24_000;
 const MAX_README_CHARS = 6_000;
@@ -110,28 +111,6 @@ function extensionOf(filePath: string): string {
 
 function safeBaseName(filePath: string): string {
   return path.posix.basename(filePath);
-}
-
-function extractFirstJsonObject(raw: string): string {
-  const start = raw.indexOf("{");
-  if (start < 0) {
-    throw new Error("No JSON object found in LLM output");
-  }
-
-  let depth = 0;
-  for (let index = start; index < raw.length; index += 1) {
-    const char = raw[index];
-    if (char === "{") {
-      depth += 1;
-    } else if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return raw.slice(start, index + 1);
-      }
-    }
-  }
-
-  throw new Error("Unterminated JSON object in LLM output");
 }
 
 async function llmJson<T>(
