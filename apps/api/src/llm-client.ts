@@ -323,7 +323,17 @@ class ChatCompletionsLlmClient implements LlmClient {
 
       return await this.parseSseCompletion(response, onDelta);
     } catch (error) {
-      // Provider streaming may be unsupported; fallback to non-streaming completion.
+      if (error instanceof Error) {
+        const msg = error.message;
+        const isUnsupportedStreaming =
+          msg.includes("LLM request failed (400)") ||
+          msg.includes("LLM request failed (422)") ||
+          msg.includes("streaming") ||
+          msg.includes("unsupported");
+        if (!isUnsupportedStreaming) {
+          throw error;
+        }
+      }
       const completion = await this.completeWithUsage(messages);
       if (completion.content) {
         onDelta(completion.content);

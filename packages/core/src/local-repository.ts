@@ -6,7 +6,8 @@ import { promisify } from "node:util";
 import { resolveInsideRoot, toRelativePosix } from "./path-guard.js";
 
 const execFileAsync = promisify(execFile);
-let rgAvailable: boolean | undefined;
+const rgAvailableCache = new Map<string, { value: boolean; checkedAt: number }>();
+const RG_CACHE_TTL_MS = 60_000;
 
 const IGNORED_DIRECTORY_NAMES = new Set([
   ".git",
@@ -162,7 +163,7 @@ export class LocalRepository {
             };
           });
       } catch {
-        return [];
+        return this.searchWithoutRipgrep(query, maxResults);
       }
     }
 
@@ -199,17 +200,19 @@ export class LocalRepository {
   }
 
   private async hasRipgrep(): Promise<boolean> {
-    if (rgAvailable !== undefined) {
-      return rgAvailable;
+    const now = Date.now();
+    const cached = rgAvailableCache.get(this.rootPath);
+    if (cached && now - cached.checkedAt < RG_CACHE_TTL_MS) {
+      return cached.value;
     }
 
     try {
       await execFileAsync("rg", ["--version"]);
-      rgAvailable = true;
+      rgAvailableCache.set(this.rootPath, { value: true, checkedAt: now });
+      return true;
     } catch {
-      rgAvailable = false;
+      rgAvailableCache.set(this.rootPath, { value: false, checkedAt: now });
+      return false;
     }
-
-    return rgAvailable;
   }
 }

@@ -16,15 +16,36 @@ type SessionRecord = {
   id: string;
   repoPath: string;
   createdAt: string;
+  lastAccessedAt: number;
   usage: LlmUsage;
   graphCache?: {
     rootPath: string;
     maxNodes: number;
     graph: RepoGraph;
+    builtAt: number;
   };
 };
 
 const sessionStore = new Map<string, SessionRecord>();
+const SESSION_TTL_MS = 60 * 60 * 1000;
+const MAX_SESSIONS = 50;
+const GRAPH_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function evictExpiredSessions(): void {
+  const now = Date.now();
+  for (const [id, session] of sessionStore) {
+    if (now - session.lastAccessedAt > SESSION_TTL_MS) {
+      sessionStore.delete(id);
+    }
+  }
+}
+
+function touchSession(session: SessionRecord): void {
+  session.lastAccessedAt = Date.now();
+  if (sessionStore.size > MAX_SESSIONS) {
+    evictExpiredSessions();
+  }
+}
 
 type UsagePricing = {
   inputUsdPer1M: number;
@@ -193,12 +214,18 @@ async function getOrBuildGraph(
   maxNodes: number
 ): Promise<RepoGraph> {
   const cache = session.graphCache;
-  if (cache && cache.rootPath === rootPath && cache.maxNodes === maxNodes) {
+  const now = Date.now();
+  if (
+    cache &&
+    cache.rootPath === rootPath &&
+    cache.maxNodes === maxNodes &&
+    now - cache.builtAt < GRAPH_CACHE_TTL_MS
+  ) {
     return cache.graph;
   }
 
   const graph = await buildRepoGraph(repository, rootPath, maxNodes);
-  session.graphCache = { rootPath, maxNodes, graph };
+  session.graphCache = { rootPath, maxNodes, graph, builtAt: now };
   return graph;
 }
 
@@ -316,6 +343,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
       id,
       repoPath,
       createdAt: new Date().toISOString(),
+      lastAccessedAt: Date.now(),
       usage: emptyUsage()
     };
     sessionStore.set(id, record);
@@ -345,6 +373,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
         error: "Session not found"
       });
     }
+    touchSession(session);
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
@@ -394,6 +423,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
         error: "Session not found"
       });
     }
+    touchSession(session);
 
     const writeEvent = (event: Record<string, unknown>) => {
       reply.raw.write(`${JSON.stringify(event)}\n`);
@@ -486,6 +516,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
         error: "Session not found"
       });
     }
+    touchSession(session);
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
@@ -526,6 +557,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
         error: "Session not found"
       });
     }
+    touchSession(session);
     if (!isPatchRequestAuthorized(request.headers)) {
       return reply.status(403).send({
         error: "Patch endpoint is protected",
@@ -609,6 +641,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
         error: "Session not found"
       });
     }
+    touchSession(session);
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
@@ -647,6 +680,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
         error: "Session not found"
       });
     }
+    touchSession(session);
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
@@ -691,6 +725,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
         error: "Session not found"
       });
     }
+    touchSession(session);
 
     try {
       const repository = await LocalRepository.open(session.repoPath);
@@ -738,6 +773,14 @@ async function start() {
   const port = Number(process.env.PORT ?? 8787);
   const host = process.env.HOST ?? "127.0.0.1";
   await server.listen({ port, host });
+
+  const shutdown = async (signal: string) => {
+    console.log(`Received ${signal}, shutting down gracefully...`);
+    await server.close();
+    process.exit(0);
+  };
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
 }
 
 const currentModulePath = fileURLToPath(import.meta.url);

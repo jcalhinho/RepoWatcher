@@ -306,10 +306,13 @@ async function spawnCommand(
   stdinContent?: string
 ): Promise<CommandResult> {
   return new Promise<CommandResult>((resolve, reject) => {
+    const sanitizedEnv: NodeJS.ProcessEnv = { ...process.env };
+    delete sanitizedEnv.LLM_API_KEY;
+    delete sanitizedEnv.REPO_WATCHER_PATCH_TOKEN;
     const child = spawn(resolveWindowsExecutable(command[0]), command.slice(1), {
       cwd: repoRoot,
       shell: false,
-      env: process.env
+      env: sanitizedEnv
     });
 
     let stdout = "";
