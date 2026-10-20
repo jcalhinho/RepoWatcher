@@ -16,7 +16,12 @@ pub enum Provider {
     ClaudeCode,
     Codex,
     Cursor,
+    // Serialized names must match `key()`, which the UI and the SQLite
+    // `provider` column use. Aliases keep events stored before this rename
+    // readable.
+    #[serde(rename = "opencode", alias = "open_code")]
     OpenCode,
+    #[serde(rename = "github_copilot", alias = "git_hub_copilot")]
     GitHubCopilot,
     GeminiCli,
     Cline,
@@ -138,5 +143,28 @@ impl SessionEvent {
             outcome: None,
             content: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serialized_provider_matches_key() {
+        for provider in Provider::ALL {
+            let serialized = serde_json::to_string(&provider).unwrap();
+            assert_eq!(serialized, format!("\"{}\"", provider.key()));
+            let parsed: Provider = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(parsed, provider);
+        }
+    }
+
+    #[test]
+    fn legacy_provider_names_still_deserialize() {
+        let opencode: Provider = serde_json::from_str("\"open_code\"").unwrap();
+        let copilot: Provider = serde_json::from_str("\"git_hub_copilot\"").unwrap();
+        assert_eq!(opencode, Provider::OpenCode);
+        assert_eq!(copilot, Provider::GitHubCopilot);
     }
 }

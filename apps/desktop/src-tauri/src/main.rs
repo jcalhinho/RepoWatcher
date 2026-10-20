@@ -186,7 +186,9 @@ fn cursor_setup(
             endpoint = endpoint
         );
         format!(
-            "python3 -c {}",
+            // Like the PowerShell `catch {}`: never fail the Cursor hook when the
+            // observer is closed or python3 is missing.
+            "python3 -c {} >/dev/null 2>&1 || true",
             serde_json::to_string(&python).map_err(|error| error.to_string())?
         )
     };
