@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { deriveRaceState, isTurnComplete } from "./race";
+import type { RaceLane } from "./SprintTrack3D";
+
+const SprintTrack3D = lazy(() => import("./SprintTrack3D"));
 import {
   Activity, ArrowDownToLine, Bot, ChevronDown, CircleHelp,
   FolderGit2, GitBranch, Gauge, LayoutDashboard, Plus,
@@ -333,21 +336,38 @@ function SprintTrack({ events, now, liveEventIds }: { events: SessionEvent[]; no
   const lanes = raceProviderIds
     .map((id) => providers.find((provider) => provider.id === id))
     .filter((provider): provider is Provider => Boolean(provider));
-  const states = lanes.map((provider) => ({ provider, state: deriveRaceState(provider.id === "gemini" ? "gemini_cli" : provider.id, events, now) }));
+  const states = lanes.map((provider) => {
+    // Event payloads carry the backend provider key, which differs from the UI id for Gemini.
+    const raceKey = provider.id === "gemini" ? "gemini_cli" : provider.id;
+    const state = deriveRaceState(raceKey, events, now);
+    const isLiveEvent = Boolean(state.latest && liveEventIds[raceKey] === state.latest.event_id);
+    const cue: RaceLane["cue"] = state.latest?.kind === "tool_failed" ? "fall" : state.latest?.kind === "session_ended" || (state.latest?.kind === "checkpoint" && isTurnComplete(raceKey, state.latest)) ? "finish" : "leap";
+    const statusText = state.status === "running" ? "EN COURSE" : state.status === "recent" ? "SIGNAL RÉCENT" : state.status === "finished" ? "À L’ARRIVÉE" : state.status === "idle" ? "AU REPOS" : "À L’ÉCOUTE";
+    return { provider, state, isLiveEvent, cue, statusText };
+  });
   const running = states.filter(({ state }) => state.status === "running" || state.status === "recent").length;
+  const [mode, setMode] = useState<"3d" | "2d">(() => (readStoredTrackMode() ?? (supportsWebGL() ? "3d" : "2d")));
+  const reducedMotion = usePrefersReducedMotion();
+  const lanes3d: RaceLane[] = states.map(({ provider, state, isLiveEvent, cue }) => ({ id: provider.id, name: provider.name, color: provider.color, status: state.status, progress: state.progress, cue, cueKey: isLiveEvent && state.latest ? state.latest.event_id : null }));
+  function chooseMode(next: "3d" | "2d") {
+    setMode(next);
+    try { window.localStorage.setItem("repowatcher.sprint-track-mode", next); } catch { /* preference is optional */ }
+  }
 
-  return <section className="sprint-panel" aria-label="Course en direct des agents">
+  return <section className={`sprint-panel mode-${mode}`} aria-label="Course en direct des agents">
     <div className="sprint-heading">
       <div><div className="sprint-kicker"><span className="sprint-live-dot" /> STADE DE TÉLÉMÉTRIE <span>·</span> 100 M</div><h1>La course des agents</h1><p>Chaque événement les fait bondir. Un échec les fait trébucher. Un tour terminé franchit la ligne.</p></div>
       <div className={`race-counter ${running ? "is-running" : ""}`}><span className="race-counter-lamps"><i /><i /><i /></span><b>{String(running).padStart(2, "0")}</b><small>{running > 1 ? "AGENTS EN MOUVEMENT" : running === 1 ? "AGENT EN MOUVEMENT" : "EN ATTENTE DU DÉPART"}</small></div>
     </div>
+    <div className="track-mode" role="group" aria-label="Rendu de la piste"><button className={mode === "3d" ? "selected" : ""} onClick={() => chooseMode("3d")} aria-pressed={mode === "3d"}>3D</button><button className={mode === "2d" ? "selected" : ""} onClick={() => chooseMode("2d")} aria-pressed={mode === "2d"}>2D</button></div>
+    {mode === "3d" ? <>
+      <div className="sprint-stage"><Suspense fallback={<div className="sprint-stage-loading">Chargement du stade…</div>}><SprintTrack3D lanes={lanes3d} reducedMotion={reducedMotion} /></Suspense></div>
+      <div className="sprint-legend">{states.map(({ provider, state, statusText }) => <div className={`sprint-legend-item ${state.status}`} key={provider.id} style={{ "--runner-color": provider.color } as CSSProperties}><ProviderMark provider={provider} small /><span>{provider.name}</span><small>{statusText}</small><b>{state.progress} m</b></div>)}</div>
+    </> : <>
     <div className="track-axis" aria-hidden="true"><span>DÉPART</span><i>25 M</i><i>50 M</i><i>75 M</i><b>ARRIVÉE</b></div>
     <div className="sprint-lanes">
-      {states.map(({ provider, state }, laneIndex) => {
-        const isLiveEvent = Boolean(state.latest && liveEventIds[provider.id] === state.latest.event_id);
-        const cue = state.latest?.kind === "tool_failed" ? "fall" : state.latest?.kind === "session_ended" || (state.latest?.kind === "checkpoint" && isTurnComplete(provider.id, state.latest)) ? "finish" : "leap";
+      {states.map(({ provider, state, isLiveEvent, cue, statusText }, laneIndex) => {
         const style = { "--runner-color": provider.color, "--lane-delay": `${laneIndex * 70}ms`, "--runner-progress": `${state.progress}%` } as CSSProperties;
-        const statusText = state.status === "running" ? "EN COURSE" : state.status === "recent" ? "SIGNAL RÉCENT" : state.status === "finished" ? "À L’ARRIVÉE" : state.status === "idle" ? "AU REPOS" : "À L’ÉCOUTE";
         return <div className={`sprint-lane ${state.status}`} key={provider.id} style={style}>
           <div className="lane-identity"><ProviderMark provider={provider} small /><span>{provider.name}</span><small>{statusText}</small></div>
           <div className="lane-track">
@@ -367,8 +387,39 @@ function SprintTrack({ events, now, liveEventIds }: { events: SessionEvent[]; no
         </div>;
       })}
     </div>
+    </>}
     <div className="sprint-footnote"><span><i className="footnote-leap" /> saut = nouvel événement</span><span><i className="footnote-fall" /> chute = échec observé</span><span>Distance visuelle = signaux reçus, pas un % d’avancement du modèle.</span></div>
   </section>;
+}
+
+function readStoredTrackMode(): "3d" | "2d" | null {
+  try {
+    const stored = window.localStorage.getItem("repowatcher.sprint-track-mode");
+    return stored === "3d" || stored === "2d" ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function supportsWebGL() {
+  try {
+    const canvas = document.createElement("canvas");
+    return Boolean(canvas.getContext("webgl2") || canvas.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+  useEffect(() => {
+    const query = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!query) return;
+    const update = () => setReduced(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return reduced;
 }
 
 function ProviderRow({ provider }: { provider: Provider }) {
