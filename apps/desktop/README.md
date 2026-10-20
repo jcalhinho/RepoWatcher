@@ -145,7 +145,9 @@ and MSI `.msi` installers as a downloadable workflow artifact retained for 30
 days. Each run installs frontend dependencies, type-checks the UI, builds the
 frontend assets, runs the Rust connector tests, then builds and hashes both
 installers. The Windows build containing the current UI and log-readability
-updates completed successfully on 2026-10-20. Download its
+updates and live 100 m event track completed successfully on 2026-10-20. The
+workflow type-checks and tests the provider race-state transitions before
+packaging. Download its
 [`repowatcher-agent-observer-windows-x64` artifact](https://github.com/jcalhinho/RepoWatcher/actions/runs/39490173920/artifacts/12296735250)
 from the successful [Actions run](https://github.com/jcalhinho/RepoWatcher/actions/runs/39490173920).
 The artifact is retained for 30 days. On a fresh checkout, use the dedicated

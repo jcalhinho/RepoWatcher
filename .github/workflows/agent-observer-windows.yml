@@ -35,6 +35,9 @@ jobs:
       - name: Type-check desktop UI
         run: npm run desktop:typecheck
 
+      - name: Test live race event states
+        run: npm run test --workspace @repo-watcher/agent-observer-desktop
+
       - name: Build desktop frontend assets
         run: npm run build --workspace @repo-watcher/agent-observer-desktop
 
