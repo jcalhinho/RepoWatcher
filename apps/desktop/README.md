@@ -148,8 +148,8 @@ installers. The Windows build containing the current UI and log-readability
 updates and live 100 m event track completed successfully on 2026-10-20. The
 workflow type-checks and tests the provider race-state transitions before
 packaging. Download its
-[`repowatcher-agent-observer-windows-x64` artifact](https://github.com/jcalhinho/RepoWatcher/actions/runs/39490173920/artifacts/12296735250)
-from the successful [Actions run](https://github.com/jcalhinho/RepoWatcher/actions/runs/39490173920).
+[`repowatcher-agent-observer-windows-x64` artifact](https://github.com/jcalhinho/RepoWatcher/actions/runs/39500655847/artifacts/12301760385)
+from the successful [Actions run](https://github.com/jcalhinho/RepoWatcher/actions/runs/39500655847).
 The artifact is retained for 30 days. On a fresh checkout, use the dedicated
 branch:
 
