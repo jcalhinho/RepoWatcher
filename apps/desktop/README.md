@@ -135,11 +135,12 @@ relevant pushes to `agent-observer/windows-release`. It produces NSIS `.exe`
 and MSI `.msi` installers as a downloadable workflow artifact retained for 30
 days. Each run installs frontend dependencies, type-checks the UI, builds the
 frontend assets, runs the Rust connector tests, then builds and hashes both
-installers. The initial
-Windows build completed successfully on 2026-10-20; open the
-[successful Actions run](https://github.com/jcalhinho/RepoWatcher/actions/runs/39483768986)
-to download its `repowatcher-agent-observer-windows-x64` artifact. On a fresh
-checkout, use the dedicated branch:
+installers. The Windows build containing the current UI and log-readability
+updates completed successfully on 2026-10-20. Download its
+[`repowatcher-agent-observer-windows-x64` artifact](https://github.com/jcalhinho/RepoWatcher/actions/runs/39490173920/artifacts/12296735250)
+from the successful [Actions run](https://github.com/jcalhinho/RepoWatcher/actions/runs/39490173920).
+The artifact is retained for 30 days. On a fresh checkout, use the dedicated
+branch:
 
 ```sh
 git fetch origin agent-observer/windows-release
