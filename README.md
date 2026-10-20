@@ -1,5 +1,12 @@
 # RepoWatcher
 
+> **Desktop agent observability:** a separate Tauri desktop app is under
+> development at [apps/desktop](./apps/desktop/README.md). It observes real
+> Claude Code hooks and Codex/Gemini CLI/OpenCode session data locally, persists
+> operational metadata in SQLite, displays a live activity chart, and reads
+> Git status from a user-selected repository. It is
+> distinct from the existing RepoWatcher repository-exploration web app.
+
 ![RepoWatcher illustration](./pic.png)
 
 Assistant local d'exploration de dépôt (FR/EN): cartographier un repo, visualiser les interactions entre fichiers, identifier les zones sensibles, et obtenir des explications IA contextualisées.

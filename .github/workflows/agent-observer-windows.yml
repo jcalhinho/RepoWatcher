@@ -1,0 +1,73 @@
+name: Build Agent Observer for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [agent-observer/windows-release]
+    paths:
+      - "apps/desktop/**"
+      - "crates/session-events/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/agent-observer-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installers:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Type-check desktop UI
+        run: npm run desktop:typecheck
+
+      - name: Build NSIS and MSI installers
+        run: npm run desktop:build
+
+      - name: Generate SHA-256 manifest
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE "target/release/bundle"
+          $nsisDir = Join-Path $bundle "nsis"
+          $msiDir = Join-Path $bundle "msi"
+          if (!(Test-Path $nsisDir) -or !(Test-Path $msiDir)) {
+            throw "Expected NSIS and MSI output directories were not created."
+          }
+          $installers = @(
+            Get-ChildItem -LiteralPath $nsisDir -Filter "*.exe" -File
+            Get-ChildItem -LiteralPath $msiDir -Filter "*.msi" -File
+          )
+          if ($installers.Count -ne 2) {
+            throw "Expected exactly one NSIS setup and one MSI installer; found $($installers.Count) files."
+          }
+          $manifest = $installers | Sort-Object FullName | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $relativePath = $_.FullName.Substring($bundle.Length + 1).Replace("\", "/")
+            "$hash  $relativePath"
+          }
+          $manifest | Set-Content -LiteralPath (Join-Path $bundle "installer-sha256.txt") -Encoding ascii
+
+      - name: Publish downloadable installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: repowatcher-agent-observer-windows-x64
+          path: |
+            target/release/bundle/installer-sha256.txt
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 30

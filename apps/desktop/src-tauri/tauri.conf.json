@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RepoWatcher Agent Observer",
+  "version": "0.1.0",
+  "identifier": "dev.repowatcher.agentobserver",
+  "build": {
+    "beforeDevCommand": "npm run dev --workspace @repo-watcher/agent-observer-desktop",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build --workspace @repo-watcher/agent-observer-desktop",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "RepoWatcher · Agent Observer",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 1120,
+        "minHeight": 720,
+        "center": true,
+        "backgroundColor": "#101318"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "category": "DeveloperTool",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "shortDescription": "Suivi local des sessions d'agents IA",
+    "longDescription": "Visualisez les sessions, commandes, tokens et changements de vos agents de code."
+  }
+}
