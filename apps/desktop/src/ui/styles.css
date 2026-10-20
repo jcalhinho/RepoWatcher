@@ -5,7 +5,7 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  font-size: 13px;
+  font-size: 16px;
   --bg: #101318;
   --panel: #181c23;
   --line: #2b303a;
@@ -32,7 +32,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .workspace-switcher:hover { border-color: #414958; }
 .workspace-icon { width: 28px; height: 28px; border: 1px solid #363e4d; background: #222834; border-radius: 7px; display: grid; place-items: center; color: #a5b2ca; }
 .workspace-copy { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 2px; }
-.workspace-copy b { font-weight: 600; color: #dfe3ec; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.workspace-copy b { font-weight: 600; color: #dfe3ec; font-size: 13px; overflow-wrap: anywhere; word-break: break-word; }
 .workspace-copy small { font-size: 10px; color: #7b8493; }
 .muted { color: #6f7888; }
 .nav-label { font-size: 9px; letter-spacing: 1px; color: #788293; }
@@ -130,7 +130,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
 .bottom-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; margin-top: 14px; }
 .repo-panel, .insight-panel { min-height: 146px; }
-.repo-panel .panel-heading p { max-width: 430px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.repo-panel .panel-heading p { max-width: 430px; white-space: normal; overflow-wrap: anywhere; }
 .repo-empty { display: flex; align-items: center; gap: 11px; padding: 22px 16px; color: #929baa; font-size: 9px; }
 .repo-grid-icon { width: 34px; height: 34px; border: 1px solid #343c49; border-radius: 8px; background: #202630; color: #98a9c6; display: grid; place-items: center; }
 .insight-heading { display: flex; align-items: center; gap: 9px; padding: 15px 15px 0; }
@@ -151,11 +151,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .connector-card.configured { background: #1b2422; }
 .connector-action { border: 1px solid #3b5145; border-radius: 5px; background: #22352c; color: #9bd0ad; padding: 4px 7px; font-size: 9px; }
 .provider-ready { width: 6px; height: 6px; border-radius: 50%; }
-.event-feed { padding: 13px 16px; overflow: auto; max-height: 352px; }
-.event-row { display: grid; grid-template-columns: 66px 115px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 34px; border-bottom: 1px solid #292f38; color: #bac1ce; font-size: 10px; }
+.event-feed { padding: 13px 16px; overflow: visible; }
+.event-row { display: grid; grid-template-columns: 88px minmax(150px, 210px) minmax(0, 1fr); align-items: start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #292f38; color: #bac1ce; font-size: 14px; line-height: 1.5; }
 .event-row time { color: #858f9f; font: 10px Consolas, monospace; }
 .event-kind { color: #a9b5df; text-transform: capitalize; }
-.event-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #929baa; }
+.event-detail { min-width: 0; color: #c1c8d4; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.event-payload { grid-column: 1 / -1; min-width: 0; color: #aab4c4; }
+.event-payload summary { width: fit-content; color: #aebcff; cursor: pointer; font-size: 12px; }
+.event-payload pre { margin: 8px 0 2px; padding: 12px; border: 1px solid #343b49; border-radius: 7px; background: #11141a; color: #d5dbea; font: 12px/1.55 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 .activity-chart { margin: 12px 16px 0; padding: 8px 10px 3px; border: 1px solid #2b303a; border-radius: 6px; background: #14171d; }
 .chart-caption { display: flex; justify-content: space-between; color: #858f9f; font: 9px Consolas, monospace; }
 .activity-chart svg { display: block; width: 100%; height: 62px; overflow: visible; }
@@ -164,13 +167,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .repo-map { padding: 12px 15px; color: #9da6b5; font-size: 9px; }
 .repo-map-meta { display: flex; justify-content: space-between; gap: 6px; padding-bottom: 7px; border-bottom: 1px solid #2c323d; }
 .repo-map-meta b { color: #c6d0e3; font-weight: 500; }
-.repo-map-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 5px; min-height: 22px; border-bottom: 1px solid #252a32; }
-.repo-map-row code, .repo-commits code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c3cbe0; font: 9px Consolas, monospace; }
+.repo-map-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: start; gap: 5px; min-height: 28px; padding: 5px 0; border-bottom: 1px solid #252a32; }
+.repo-map-row code, .repo-commits code { min-width: 0; color: #c3cbe0; font: 12px/1.5 Consolas, monospace; overflow-wrap: anywhere; word-break: break-word; }
 .repo-map-row > span:last-child { color: #8e9aaf; }
 .repo-tree { color: #626d80; }
 .repo-map-empty { padding: 12px 0; color: #929baa; }
 .repo-commits { margin-top: 8px; display: grid; gap: 5px; }
-.repo-commits > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aeb5c3; }
+.repo-commits > div { color: #aeb5c3; line-height: 1.5; overflow-wrap: anywhere; }
 .repo-commits span { color: #808a99; }
 .repo-map > small { display: block; margin-top: 8px; color: #858e9d; line-height: 1.4; }
 .secondary-view { min-height: 640px; }
@@ -189,16 +192,18 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .session-list { max-height: 640px; padding: 8px; }
 .session-list-item { width: 100%; display: grid; gap: 6px; padding: 12px; text-align: left; border: 1px solid transparent; border-bottom-color: #2a303a; background: transparent; color: #c4cad5; }
 .session-list-item:hover, .session-list-item.selected { border-color: #3b4354; background: #222735; }
-.session-list-item b { color: #e0e5f0; font: 11px Consolas, monospace; }
-.session-list-item span, .session-list-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #929baa; font-size: 10px; }
+.session-list-item b { color: #e0e5f0; font: 12px/1.5 Consolas, monospace; overflow-wrap: anywhere; word-break: break-word; }
+.session-list-item span, .session-list-item small { color: #aab3c1; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; word-break: break-word; }
 .session-detail { padding: 16px; }
 .session-detail-heading { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
 .session-detail-heading h2 { margin: 0; color: #e0e4ec; font-size: 15px; }
 .session-detail-heading p { margin: 5px 0 0; color: #8f98a7; font: 10px Consolas, monospace; }
-.session-event { display: grid; grid-template-columns: 74px 125px minmax(0, 1fr); align-items: center; gap: 12px; min-height: 38px; border-bottom: 1px solid #2a3039; color: #bbc2cf; font-size: 10px; }
+.session-event { display: grid; grid-template-columns: 88px minmax(150px, 210px) minmax(0, 1fr); align-items: start; gap: 12px; padding: 11px 0; border-bottom: 1px solid #2a3039; color: #bbc2cf; font-size: 14px; line-height: 1.5; }
 .session-event time { color: #8993a1; font: 10px Consolas, monospace; }
-.session-event > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.token-source { display: block; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; color: #a3a9c2; font-size: 9px; }
+.session-event > span:nth-of-type(1) { color: #b7c2e8; overflow-wrap: anywhere; }
+.session-event > span:nth-of-type(2) { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.session-event > .event-payload { grid-column: 1 / -1; }
+.token-source { display: block; margin-top: 5px; color: #b7bfd6; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .session-disclosure { margin-top: 16px; padding: 11px; border: 1px solid #343a46; border-radius: 6px; color: #9da6b4; font-size: 10px; line-height: 1.5; }
 [hidden] { display: none !important; }
 .setup-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: #080a0dcc; z-index: 5; }
@@ -218,4 +223,32 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .setup-note { margin-top: 12px; }
 .setup-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
 .setup-close { position: absolute; right: 17px; top: 14px; border: 0; background: transparent; color: #9da5b2; font-size: 23px; }
+
+/* Readable operator scale: data labels stay legible beside the dense live charts. */
+.brand-name { font-size: 17px; }
+.brand-product, .nav-label, .status-pill, .live-indicator, .count-badge, .connector-search kbd, .soon-tag { font-size: 11px; }
+.workspace-copy b, .workspace-copy small, .nav-button, .nav-button small, .provider-row, .all-connectors, .privacy-card b, .privacy-card span, .sidebar-footer b, .sidebar-footer small, .breadcrumbs, .local-status, .eyebrow, .primary-button, .metric-label, .metric-note, .panel-heading p, .empty-sessions p, .outline-button, .connector-search input, .connector-name, .connector-scope, .connector-state, .connectors-footer, .repo-empty, .insight-heading p, .insight-empty p, .page-footer, .connector-action, .event-row time, .chart-caption, .chart-legend, .repo-map, .repo-map > small, .secondary-heading p, .danger-button, .session-detail-heading p, .session-disclosure, .setup-dialog p, .setup-dialog ol, .setup-note, .privacy-options b, .privacy-options small, .policy-error { font-size: 13px; }
+.nav-button { min-height: 42px; height: auto; }
+.primary-button, .outline-button, .danger-button { min-height: 40px; height: auto; padding-top: 8px; padding-bottom: 8px; line-height: 1.35; }
+.provider-row { min-height: 36px; height: auto; }
+.sidebar-footer .avatar, .avatar { font-size: 12px; }
+.welcome-row h1 { font-size: 38px; }
+.welcome-subtitle { font-size: 15px; }
+.metric-label { font-size: 13px; }
+.metric-value { font-size: 23px; }
+.metric-note { line-height: 1.45; align-items: flex-start; }
+.panel h2, .insight-heading h2 { font-size: 16px; }
+.empty-sessions h3, .session-detail-heading h2 { font-size: 17px; }
+.live-indicator { font-size: 11px; }
+.connector-search { min-height: 38px; height: auto; }
+.connector-card { min-height: 52px; height: auto; padding: 6px 0; }
+.connector-list { max-height: 320px; }
+.repo-map-meta, .repo-map-row > span:last-child, .repo-commits { font-size: 13px; }
+.secondary-heading h1 { font-size: 32px; }
+.event-row time, .session-event time { font-size: 12px; line-height: 1.5; }
+.setup-dialog h2 { font-size: 25px; }
+.setup-dialog textarea { font-size: 13px; }
+.privacy-options b { font-size: 14px; }
+.privacy-options small { line-height: 1.55; }
+.session-toolbar { flex-wrap: wrap; }
 @media (max-width: 1250px) { .sidebar { width: 220px; }.page-content { padding-left: 25px; padding-right: 25px; }.topbar { padding: 0 25px; }.content-grid { grid-template-columns: minmax(0, 1.4fr) minmax(300px, 1fr); } }

@@ -67,6 +67,12 @@ older stored events and export the full local event database as JSON to a path
 chosen in the native save dialog. Exported prompts and commands are included
 only if their corresponding capture options were enabled when recorded.
 
+The overview renders every event in the currently loaded page (up to 500),
+with wrapping rather than visual ellipses. Sessions can page through older
+events, and each event has a “Journal complet” disclosure showing the complete
+persisted JSON. Tool stdout/results are not shown because they are deliberately
+discarded before persistence.
+
 Codex is supported by following appended JSONL rollout records under
 `%USERPROFILE%\\.codex\\sessions` (or `$HOME/.codex/sessions`; `CODEX_HOME` is
 respected). No Codex settings are edited. At startup, the monitor seeks to the
