@@ -73,6 +73,15 @@ events, and each event has a “Journal complet” disclosure showing the comple
 persisted JSON. Tool stdout/results are not shown because they are deliberately
 discarded before persistence.
 
+The overview's 100 m agent track animates each newly observed event: events
+trigger a hop, tool failures trigger a fall/recovery, and explicit turn/session
+completion signals move the runner to the finish. Claude Code and Codex expose
+turn-stop/completion markers; OpenCode, Gemini CLI, and Cursor can expose
+activity without a reliable model-generation boundary, so their lanes are
+labelled “signal récent” rather than claiming a confirmed running state. Track
+distance is a visual activity indicator, never a model-completion percentage.
+The animation respects the operating system's reduced-motion preference.
+
 Codex is supported by following appended JSONL rollout records under
 `%USERPROFILE%\\.codex\\sessions` (or `$HOME/.codex/sessions`; `CODEX_HOME` is
 respected). No Codex settings are edited. At startup, the monitor seeks to the

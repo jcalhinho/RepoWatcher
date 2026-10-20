@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { deriveRaceState, isTurnComplete } from "./race";
 import {
   Activity, ArrowDownToLine, Bot, ChevronDown, CircleHelp,
   FolderGit2, GitBranch, Gauge, LayoutDashboard, Plus,
@@ -32,6 +33,7 @@ type SessionEvent = {
   output_tokens?: { value: number; origin: string } | null;
   model?: { value: string; origin: string } | null;
   duration_ms?: { value: number; origin: string } | null;
+  outcome?: string | null;
 };
 
 type ClaudeSetup = { endpoint: string; token: string; settings_fragment: string; capture_prompts: boolean; capture_commands: boolean };
@@ -66,6 +68,7 @@ export function App() {
   const [clock, setClock] = useState(Date.now());
   const [search, setSearch] = useState("");
   const [events, setEvents] = useState<SessionEvent[]>([]);
+  const [liveEventIds, setLiveEventIds] = useState<Record<string, string>>({});
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyNotice, setHistoryNotice] = useState("");
@@ -86,7 +89,7 @@ export function App() {
     const refreshStatus = () => invoke<string>("collector_status").then(setCollectorState).catch(() => setCollectorState("preview"));
     refreshStatus();
     const timer = window.setInterval(refreshStatus, 1500);
-    const chartTimer = window.setInterval(() => setClock(Date.now()), 10_000);
+    const chartTimer = window.setInterval(() => setClock(Date.now()), 1000);
     let unlistenError: (() => void) | undefined;
     listen<string>("collector-error", (event) => setCollectorState(`error: ${event.payload}`)).then((stop) => { unlistenError = stop; });
     invoke<SessionEvent[]>("load_session_events", { limit: 500, beforeOccurredAt: null, beforeEventId: null }).then((stored) => {
@@ -97,6 +100,7 @@ export function App() {
       });
     }).catch(() => undefined);
     listen<SessionEvent>("session-event", (event) => {
+      setLiveEventIds((current) => ({ ...current, [event.payload.provider]: event.payload.event_id }));
       setEvents((current) => [event.payload, ...current.filter((item) => item.event_id !== event.payload.event_id)].sort(compareEventsNewestFirst));
     }).then((stop) => { unlisten = stop; });
     return () => { window.clearInterval(timer); window.clearInterval(chartTimer); unlisten?.(); unlistenError?.(); };
@@ -271,7 +275,7 @@ export function App() {
 
         <div className="page-content">
           <section hidden={view !== "overview"}>
-          <section className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-line" /> OBSERVABILITÉ DES AGENTS</div><h1>Le travail de vos agents,<br /><span>enfin visible.</span></h1><p className="welcome-subtitle">Suivez leurs sessions, comprenez leurs actions et voyez ce qui a vraiment changé dans votre code.</p></div><button className="primary-button" onClick={selectRepository}><Plus size={17} /> {repoPath ? "Changer de dépôt" : "Ajouter un dépôt"}</button></section>
+          <SprintTrack events={events} now={clock} liveEventIds={liveEventIds} />
 
           <section className="metrics-grid" aria-label="Indicateurs des sessions">
             <Metric icon={<Activity size={16} />} label="Sessions observées" value={String(new Set(events.map(sessionKey)).size)} note="Claude Code + Codex + Gemini CLI + OpenCode + Cursor, données locales" tone="blue" />
@@ -321,6 +325,50 @@ function NavButton({ icon, label, active = false, badge, onClick }: { icon: Reac
 
 function ProviderMark({ provider, small = false }: { provider: Provider; small?: boolean }) {
   return <span className={`provider-mark ${small ? "small" : ""}`} style={{ "--provider-color": provider.color, "--provider-surface": provider.surface } as React.CSSProperties}>{provider.initials}</span>;
+}
+
+const raceProviderIds = ["claude_code", "codex", "opencode", "gemini", "cursor"];
+
+function SprintTrack({ events, now, liveEventIds }: { events: SessionEvent[]; now: number; liveEventIds: Record<string, string> }) {
+  const lanes = raceProviderIds
+    .map((id) => providers.find((provider) => provider.id === id))
+    .filter((provider): provider is Provider => Boolean(provider));
+  const states = lanes.map((provider) => ({ provider, state: deriveRaceState(provider.id === "gemini" ? "gemini_cli" : provider.id, events, now) }));
+  const running = states.filter(({ state }) => state.status === "running" || state.status === "recent").length;
+
+  return <section className="sprint-panel" aria-label="Course en direct des agents">
+    <div className="sprint-heading">
+      <div><div className="sprint-kicker"><span className="sprint-live-dot" /> STADE DE TÉLÉMÉTRIE <span>·</span> 100 M</div><h1>La course des agents</h1><p>Chaque événement les fait bondir. Un échec les fait trébucher. Un tour terminé franchit la ligne.</p></div>
+      <div className={`race-counter ${running ? "is-running" : ""}`}><span className="race-counter-lamps"><i /><i /><i /></span><b>{String(running).padStart(2, "0")}</b><small>{running > 1 ? "AGENTS EN MOUVEMENT" : running === 1 ? "AGENT EN MOUVEMENT" : "EN ATTENTE DU DÉPART"}</small></div>
+    </div>
+    <div className="track-axis" aria-hidden="true"><span>DÉPART</span><i>25 M</i><i>50 M</i><i>75 M</i><b>ARRIVÉE</b></div>
+    <div className="sprint-lanes">
+      {states.map(({ provider, state }, laneIndex) => {
+        const isLiveEvent = Boolean(state.latest && liveEventIds[provider.id] === state.latest.event_id);
+        const cue = state.latest?.kind === "tool_failed" ? "fall" : state.latest?.kind === "session_ended" || (state.latest?.kind === "checkpoint" && isTurnComplete(provider.id, state.latest)) ? "finish" : "leap";
+        const style = { "--runner-color": provider.color, "--lane-delay": `${laneIndex * 70}ms`, "--runner-progress": `${state.progress}%` } as CSSProperties;
+        const statusText = state.status === "running" ? "EN COURSE" : state.status === "recent" ? "SIGNAL RÉCENT" : state.status === "finished" ? "À L’ARRIVÉE" : state.status === "idle" ? "AU REPOS" : "À L’ÉCOUTE";
+        return <div className={`sprint-lane ${state.status}`} key={provider.id} style={style}>
+          <div className="lane-identity"><ProviderMark provider={provider} small /><span>{provider.name}</span><small>{statusText}</small></div>
+          <div className="lane-track">
+            <div className="lane-markers" aria-hidden="true"><i /><i /><i /><i /><i /></div>
+            <div className="lane-start" aria-hidden="true" />
+            <div className="lane-finish" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /></div>
+            {state.latest ? <div className={`runner-sprite ${cue} ${isLiveEvent ? "is-new-event" : ""} ${state.status === "running" || state.status === "recent" ? "is-moving" : ""}`} key={state.latest.event_id} title={`${provider.name} · ${state.latest.kind.replaceAll("_", " ")}`}>
+              <svg className="runner-figure" viewBox="0 0 58 52" role="img" aria-label={`${provider.name}, ${state.latest.kind.replaceAll("_", " ")}`}>
+                <g className="runner-trails"><path d="M3 17h13M0 24h12M6 31h10" /></g>
+                <g className="runner-body"><circle className="runner-head" cx="37" cy="8" r="5" /><path className="runner-torso" d="M34 15l-7 13 9 5 7-14" /><path className="runner-arm arm-back" d="M31 18l-11 5-5-6" /><path className="runner-arm arm-front" d="M38 18l9 3 5-6" /><path className="runner-leg leg-back" d="M29 31l-10 8-8 1" /><path className="runner-leg leg-front" d="M35 32l7 8 9 2" /></g>
+                <path className="runner-ground" d="M2 47h52" />
+              </svg>
+              <span className="runner-event-flash" />
+            </div> : <div className="lane-empty-runner" aria-hidden="true"><span /></div>}
+            <span className="lane-distance" aria-hidden="true">{state.progress} m</span>
+          </div>
+        </div>;
+      })}
+    </div>
+    <div className="sprint-footnote"><span><i className="footnote-leap" /> saut = nouvel événement</span><span><i className="footnote-fall" /> chute = échec observé</span><span>Distance visuelle = signaux reçus, pas un % d’avancement du modèle.</span></div>
+  </section>;
 }
 
 function ProviderRow({ provider }: { provider: Provider }) {
