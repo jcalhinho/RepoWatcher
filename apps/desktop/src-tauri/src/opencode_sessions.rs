@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(1500);
 const BUSY_TIMEOUT: Duration = Duration::from_millis(250);
+const POLL_OVERLAP_MS: i64 = 2_000;
 
 #[derive(Default)]
 struct SessionInfo {
@@ -30,6 +31,7 @@ struct SessionInfo {
 
 pub struct OpenCodeMonitor {
     started_at_ms: i64,
+    last_poll_ms: HashMap<PathBuf, i64>,
     seen_messages: HashMap<(PathBuf, String), String>,
     active_tools: HashSet<(PathBuf, String)>,
 }
@@ -38,6 +40,7 @@ impl OpenCodeMonitor {
     pub fn new() -> Self {
         Self {
             started_at_ms: Utc::now().timestamp_millis(),
+            last_poll_ms: HashMap::new(),
             seen_messages: HashMap::new(),
             active_tools: HashSet::new(),
         }
@@ -53,8 +56,28 @@ impl OpenCodeMonitor {
         capture_prompts: bool,
         capture_commands: bool,
     ) -> Vec<SessionEvent> {
+        self.poll_paths_at(
+            paths,
+            capture_prompts,
+            capture_commands,
+            Utc::now().timestamp_millis(),
+        )
+    }
+
+    fn poll_paths_at(
+        &mut self,
+        paths: Vec<PathBuf>,
+        capture_prompts: bool,
+        capture_commands: bool,
+        now_ms: i64,
+    ) -> Vec<SessionEvent> {
         let mut events = Vec::new();
         for path in paths {
+            let since_ms = self
+                .last_poll_ms
+                .get(&path)
+                .map(|last_poll| last_poll.saturating_sub(POLL_OVERLAP_MS))
+                .unwrap_or(self.started_at_ms);
             let Ok(connection) = Connection::open_with_flags(
                 &path,
                 OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -66,11 +89,11 @@ impl OpenCodeMonitor {
                 continue;
             }
             let Ok(mut statement) = connection.prepare(
-                "SELECT m.session_id, m.id, m.type, m.time_created, m.time_updated, m.data, s.directory FROM session_message m LEFT JOIN session_v2 s ON s.id = m.session_id WHERE m.time_created >= ?1 OR m.time_updated >= ?1 ORDER BY m.time_created, m.id",
+                "SELECT m.session_id, m.id, m.type, m.time_created, m.time_updated, m.data, s.directory FROM session_message m LEFT JOIN session_v2 s ON s.id = m.session_id WHERE m.time_created >= ?1 OR m.time_updated >= ?2 ORDER BY m.time_created, m.id",
             ) else {
                 continue;
             };
-            let Ok(rows) = statement.query_map(params![self.started_at_ms], |row| {
+            let Ok(rows) = statement.query_map(params![since_ms, since_ms], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -283,6 +306,17 @@ impl OpenCodeMonitor {
                     _ => {}
                 }
             }
+            self.last_poll_ms.insert(path.clone(), now_ms);
+            self.seen_messages.retain(|(db_path, _), fingerprint| {
+                db_path != &path
+                    || fingerprint
+                        .split(':')
+                        .next()
+                        .and_then(|ts| ts.parse::<i64>().ok())
+                        .is_some_and(|updated| {
+                            updated >= now_ms.saturating_sub(POLL_OVERLAP_MS * 2)
+                        })
+            });
         }
         events
     }
@@ -473,6 +507,7 @@ mod tests {
         let path = sample_database();
         let mut monitor = OpenCodeMonitor {
             started_at_ms: 0,
+            last_poll_ms: HashMap::new(),
             ..OpenCodeMonitor::new()
         };
         let events = monitor.poll_paths(vec![path.clone()], false, false);
@@ -527,6 +562,7 @@ mod tests {
         let path = sample_database();
         let mut monitor = OpenCodeMonitor {
             started_at_ms: 0,
+            last_poll_ms: HashMap::new(),
             ..OpenCodeMonitor::new()
         };
         let events = monitor.poll_paths(vec![path.clone()], false, true);
@@ -536,5 +572,46 @@ mod tests {
             .find(|event| event.kind == EventKind::ToolFinished)
             .expect("tool completion observed");
         assert_eq!(tool.command.as_deref(), Some("echo private"));
+    }
+
+    #[test]
+    fn polling_prunes_old_message_fingerprints() {
+        let path = sample_database();
+        let connection = Connection::open(&path).expect("open fixture database");
+        connection
+            .execute("DELETE FROM session_message", [])
+            .expect("clear fixture messages");
+        let mut monitor = OpenCodeMonitor {
+            started_at_ms: 0,
+            last_poll_ms: HashMap::new(),
+            ..OpenCodeMonitor::new()
+        };
+        let mut emitted = 0;
+
+        for index in 0..20 {
+            let timestamp = 2_000 + index * 2_000;
+            connection
+                .execute(
+                    "INSERT INTO session_message VALUES (?1, ?2, 'user', ?3, ?3, ?4)",
+                    params![
+                        "ses-test",
+                        format!("msg-{index}"),
+                        timestamp,
+                        format!("{{\"text\":\"message {index}\"}}")
+                    ],
+                )
+                .expect("insert fixture message");
+            emitted += monitor
+                .poll_paths_at(vec![path.clone()], false, false, timestamp)
+                .len();
+        }
+
+        assert!(
+            monitor.seen_messages.len() <= 3,
+            "dedup cache grew to {} rows",
+            monitor.seen_messages.len()
+        );
+        assert_eq!(emitted, 20, "old messages were emitted more than once");
+        let _ = fs::remove_file(&path);
     }
 }

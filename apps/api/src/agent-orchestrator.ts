@@ -47,7 +47,6 @@ function buildSystemPrompt(language: UserLanguage): string {
     "- run(input): execute an allowlisted command",
     "  Allowed run commands:",
     "  - ls -la",
-    "  - npm|pnpm|yarn test|lint|build",
     "  - cat <relative_file>",
     "  - head -n <1..500> <relative_file>",
     "  - tail -n <1..500> <relative_file>",

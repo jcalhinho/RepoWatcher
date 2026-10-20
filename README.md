@@ -255,7 +255,7 @@ npm run --workspace @repo-watcher/worker dev
 
 | Variable | Requis | Défaut | Description |
 |---|---|---|---|
-| `HOST` | non | `127.0.0.1` | Host Fastify |
+| `HOST` | non | `127.0.0.1` | Adresse d'écoute loopback uniquement ; les adresses réseau sont refusées pour protéger l'accès aux dépôts locaux |
 | `PORT` | non | `8787` | Port Fastify |
 | `REPO_WATCHER_PATCH_TOKEN` | non | - | Token optionnel pour protéger `POST /apply_patch` (header `x-repo-watcher-token` ou `Authorization: Bearer <token>`) |
 
@@ -475,7 +475,6 @@ Payload:
 - Exemples autorisés:
   - `ls -la`
   - `ls -la | grep -E <pattern>`
-  - `npm test`, `npm run lint`, `npm run build`
   - `cat <relative_file>`
   - `head -n <1..500> <relative_file>`
   - `tail -n <1..500> <relative_file>`
