@@ -88,20 +88,26 @@ export function App() {
   const [captureCommands, setCaptureCommands] = useState(false);
   const [policyError, setPolicyError] = useState("");
   const [copyState, setCopyState] = useState("Copier le fragment JSON");
-  const previousFocus = useRef<HTMLElement | null>(null);
+  const activeDialog = useRef<HTMLElement | null>(null);
+  const dialogOpener = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const dialogs = [...document.querySelectorAll<HTMLElement>(".workspace-modal [role='dialog'], .setup-backdrop [role='dialog']")];
     const dialog = dialogs.at(-1);
     if (!dialog) {
-      previousFocus.current?.focus();
-      previousFocus.current = null;
+      if (activeDialog.current) {
+        if (dialogOpener.current?.isConnected) dialogOpener.current.focus();
+        activeDialog.current = null;
+        dialogOpener.current = null;
+      }
       return;
     }
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    previousFocus.current = opener;
-    dialog.focus();
     const focusable = () => [...dialog.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])")];
+    if (!activeDialog.current) dialogOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const changedDialog = activeDialog.current !== dialog;
+    activeDialog.current = dialog;
+    if (changedDialog) dialog.focus();
+    else if (!dialog.contains(document.activeElement)) (focusable()[0] ?? dialog).focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -125,7 +131,6 @@ export function App() {
     dialog.addEventListener("keydown", onKeyDown);
     return () => {
       dialog.removeEventListener("keydown", onKeyDown);
-      if (opener?.isConnected) opener.focus();
     };
   }, [view, workspaceDialog, claudeSetup, cursorSetup, codexSetup, geminiSetup, opencodeSetup]);
 
