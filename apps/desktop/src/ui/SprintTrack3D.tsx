@@ -12,6 +12,7 @@ export type RaceLane = {
   cue: "leap" | "fall" | "finish";
   /** Event id of the latest event when it just arrived live; drives one-shot animations. */
   cueKey: string | null;
+  activity?: string | null;
 };
 
 const START_X = -9;
@@ -417,6 +418,7 @@ function Runner({ lane, z, reducedMotion }: { lane: RaceLane; z: number; reduced
   return (
     <>
       <group ref={root} position={[motion.current.x, 0, z]} scale={RUNNER_SCALE}>
+        {lane.activity && <SpeechBubble text={lane.activity} color={lane.color} />}
         {[-1, 1].map((side) => (
           <group key={side} ref={side < 0 ? leftLeg : rightLeg} position={[0, HIP_HEIGHT, side * 0.09]}>
             <mesh position={[0, -0.1, 0]}>
@@ -478,6 +480,39 @@ function Runner({ lane, z, reducedMotion }: { lane: RaceLane; z: number; reduced
       </group>
     </>
   );
+}
+
+function SpeechBubble({ text, color }: { text: string; color: string }) {
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.fillStyle = "rgba(255,255,255,0.97)";
+      context.strokeStyle = color;
+      context.lineWidth = 8;
+      context.beginPath();
+      context.roundRect(8, 8, 496, 108, 24);
+      context.fill();
+      context.stroke();
+      context.fillStyle = "#202a35";
+      context.font = "600 30px system-ui, sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      let label = text;
+      while (context.measureText(label).width > 450 && label.length > 12) label = `${label.slice(0, -4)}…`;
+      context.fillText(label, 256, 62);
+    }
+    const result = new THREE.CanvasTexture(canvas);
+    result.colorSpace = THREE.SRGBColorSpace;
+    result.needsUpdate = true;
+    return result;
+  }, [text, color]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  return <sprite position={[0.55, 1.75, 0.08]} scale={[2.35, 0.59, 1]}>
+    <spriteMaterial map={texture} transparent depthTest={false} />
+  </sprite>;
 }
 
 type MotionState = { confettiAt: number; velocities: THREE.Vector3[] };

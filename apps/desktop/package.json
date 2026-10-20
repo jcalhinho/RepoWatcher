@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run src/ui/race.test.ts",
+    "test": "vitest run src/ui",
     "tauri": "tauri"
   },
   "dependencies": {
