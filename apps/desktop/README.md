@@ -115,7 +115,9 @@ records for each message.
 The `Build Agent Observer for Windows` workflow runs on `windows-latest` after
 relevant pushes to `agent-observer/windows-release`. It produces NSIS `.exe`
 and MSI `.msi` installers as a downloadable workflow artifact retained for 30
-days. The initial Windows build completed successfully on 2026-10-20; open the
+days. Each run installs frontend dependencies, type-checks the UI, runs the
+Rust connector tests, then builds and hashes both installers. The initial
+Windows build completed successfully on 2026-10-20; open the
 [successful Actions run](https://github.com/jcalhinho/RepoWatcher/actions/runs/39483768986)
 to download its `repowatcher-agent-observer-windows-x64` artifact. On a fresh
 checkout, use the dedicated branch:

@@ -35,6 +35,9 @@ jobs:
       - name: Type-check desktop UI
         run: npm run desktop:typecheck
 
+      - name: Run Rust connector tests
+        run: cargo test --workspace --locked
+
       - name: Build NSIS and MSI installers
         run: npm run desktop:build
 
