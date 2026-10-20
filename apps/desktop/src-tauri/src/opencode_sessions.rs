@@ -44,8 +44,17 @@ impl OpenCodeMonitor {
     }
 
     pub fn poll(&mut self, capture_prompts: bool, capture_commands: bool) -> Vec<SessionEvent> {
+        self.poll_paths(database_paths(), capture_prompts, capture_commands)
+    }
+
+    fn poll_paths(
+        &mut self,
+        paths: Vec<PathBuf>,
+        capture_prompts: bool,
+        capture_commands: bool,
+    ) -> Vec<SessionEvent> {
         let mut events = Vec::new();
-        for path in database_paths() {
+        for path in paths {
             let Ok(connection) = Connection::open_with_flags(
                 &path,
                 OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -431,4 +440,101 @@ fn find_text(value: Option<&Value>, keys: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_database() -> PathBuf {
+        let path = env::temp_dir().join(format!("agent-observer-opencode-{}.db", Uuid::new_v4()));
+        let connection = Connection::open(&path).expect("create fixture database");
+        connection
+            .execute_batch(
+                "CREATE TABLE session_v2 (id TEXT PRIMARY KEY, directory TEXT NOT NULL);
+                 CREATE TABLE session_message (
+                   session_id TEXT NOT NULL, id TEXT PRIMARY KEY, type TEXT NOT NULL,
+                   time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL
+                 );
+                 INSERT INTO session_v2 (id, directory) VALUES ('ses-test', 'C:/work/demo');
+                 INSERT INTO session_message VALUES
+                   ('ses-test', 'msg-user', 'user', 1000, 1000,
+                    '{\"text\":\"private prompt\"}'),
+                   ('ses-test', 'msg-assistant', 'assistant', 1100, 1200,
+                    '{\"model\":{\"id\":\"model-x\"},\"tokens\":{\"input\":123,\"output\":45},\"time\":{\"completed\":1200},\"content\":[{\"type\":\"tool\",\"id\":\"call-1\",\"name\":\"bash\",\"time\":{\"ran\":1150,\"completed\":1190},\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"echo private\",\"path\":\"src/main.rs\"}}}]}');",
+            )
+            .expect("create OpenCode schema fixture");
+        drop(connection);
+        path
+    }
+
+    #[test]
+    fn polls_sqlite_events_without_retaining_sensitive_text_by_default() {
+        let path = sample_database();
+        let mut monitor = OpenCodeMonitor {
+            started_at_ms: 0,
+            ..OpenCodeMonitor::new()
+        };
+        let events = monitor.poll_paths(vec![path.clone()], false, false);
+        let _ = fs::remove_file(&path);
+
+        let user = events
+            .iter()
+            .find(|event| event.kind == EventKind::UserMessage)
+            .expect("user message observed");
+        assert_eq!(user.session_id, "ses-test");
+        assert_eq!(user.project_path.as_deref(), Some("C:/work/demo"));
+        assert_eq!(user.content, None);
+
+        let usage = events
+            .iter()
+            .find(|event| event.kind == EventKind::ModelUsage)
+            .expect("provider token usage observed");
+        assert_eq!(
+            usage.model.as_ref().map(|value| value.value.as_str()),
+            Some("model-x")
+        );
+        assert_eq!(
+            usage.input_tokens.as_ref().map(|value| value.value),
+            Some(123)
+        );
+        assert_eq!(
+            usage.output_tokens.as_ref().map(|value| value.value),
+            Some(45)
+        );
+
+        let tool_events: Vec<_> = events
+            .iter()
+            .filter(|event| matches!(event.kind, EventKind::ToolStarted | EventKind::ToolFinished))
+            .collect();
+        assert_eq!(
+            tool_events.len(),
+            2,
+            "completed tools get a visible start and finish"
+        );
+        assert_eq!(tool_events[0].kind, EventKind::ToolStarted);
+        assert_eq!(tool_events[1].kind, EventKind::ToolFinished);
+        assert!(tool_events.iter().all(|event| event.command.is_none()));
+        assert!(
+            tool_events
+                .iter()
+                .all(|event| event.file_path.as_deref() == Some("src/main.rs"))
+        );
+    }
+
+    #[test]
+    fn command_capture_is_opt_in_for_opencode_tools() {
+        let path = sample_database();
+        let mut monitor = OpenCodeMonitor {
+            started_at_ms: 0,
+            ..OpenCodeMonitor::new()
+        };
+        let events = monitor.poll_paths(vec![path.clone()], false, true);
+        let _ = fs::remove_file(&path);
+        let tool = events
+            .iter()
+            .find(|event| event.kind == EventKind::ToolFinished)
+            .expect("tool completion observed");
+        assert_eq!(tool.command.as_deref(), Some("echo private"));
+    }
 }

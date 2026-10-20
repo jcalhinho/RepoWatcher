@@ -618,3 +618,84 @@ fn find_text(value: Option<&Value>, keys: &[&str]) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn cursor() -> Cursor {
+        Cursor {
+            offset: 0,
+            pending: Vec::new(),
+            context: SessionContext::default(),
+            message_fingerprints: HashMap::new(),
+            tool_calls: HashMap::new(),
+            legacy_modified: None,
+        }
+    }
+
+    #[test]
+    fn captures_provider_usage_and_tool_lifecycle_but_not_tool_commands_by_default() {
+        let started = Utc::now() - Duration::seconds(1);
+        let record = json!({
+            "sessionId": "gemini-session",
+            "projectHash": "project-123",
+            "messages": [{
+                "id": "message-1", "type": "gemini", "timestamp": Utc::now().to_rfc3339(),
+                "model": "gemini-test", "tokens": { "input": 90, "output": 17 },
+                "toolCalls": [{ "id": "call-1", "name": "run_shell_command",
+                    "status": "success", "args": { "command": "echo private", "path": "src/app.ts" }
+                }]
+            }]
+        });
+        let events = project_record(&record, &mut cursor(), started, false, false);
+
+        let usage = events
+            .iter()
+            .find(|event| event.kind == EventKind::ModelUsage)
+            .expect("Gemini provider usage observed");
+        assert_eq!(
+            usage.input_tokens.as_ref().map(|value| value.value),
+            Some(90)
+        );
+        assert_eq!(
+            usage.output_tokens.as_ref().map(|value| value.value),
+            Some(17)
+        );
+        assert_eq!(
+            usage.model.as_ref().map(|value| value.value.as_str()),
+            Some("gemini-test")
+        );
+        assert_eq!(usage.project_hash.as_deref(), Some("project-123"));
+
+        let tool = events
+            .iter()
+            .find(|event| event.kind == EventKind::ToolFinished)
+            .expect("completed tool observed");
+        assert_eq!(tool.file_path.as_deref(), Some("src/app.ts"));
+        assert_eq!(tool.command, None);
+
+        let captured = project_record(&record, &mut cursor(), started, false, true);
+        assert_eq!(
+            captured
+                .iter()
+                .find(|event| event.kind == EventKind::ToolFinished)
+                .and_then(|event| event.command.as_deref()),
+            Some("echo private")
+        );
+    }
+
+    #[test]
+    fn prompt_text_is_captured_only_when_explicitly_enabled() {
+        let started = Utc::now() - Duration::seconds(1);
+        let record = json!({ "messages": [{
+            "id": "user-1", "type": "user", "timestamp": Utc::now().to_rfc3339(),
+            "content": "private prompt"
+        }] });
+        let omitted = project_record(&record, &mut cursor(), started, false, false);
+        let captured = project_record(&record, &mut cursor(), started, true, false);
+        assert_eq!(omitted[0].content, None);
+        assert_eq!(captured[0].content.as_deref(), Some("private prompt"));
+    }
+}

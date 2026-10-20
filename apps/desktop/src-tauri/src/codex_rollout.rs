@@ -531,3 +531,66 @@ fn find_text(value: Option<&Value>, keys: &[&str]) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn provider_token_usage_is_projected_without_estimating_missing_fields() {
+        let mut context = SessionContext {
+            id: "codex-session".into(),
+            model: Some("gpt-test".into()),
+            ..SessionContext::default()
+        };
+        let record = json!({
+            "type": "event_msg",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "payload": { "type": "token_count", "info": { "last_token_usage": {
+                "input_tokens": 321, "output_tokens": 54
+            } } }
+        });
+        let event = project_record(&record, &mut context, false, false)
+            .expect("token event should be observed");
+
+        assert_eq!(event.kind, EventKind::ModelUsage);
+        assert_eq!(
+            event.input_tokens.as_ref().map(|value| value.value),
+            Some(321)
+        );
+        assert_eq!(
+            event.output_tokens.as_ref().map(|value| value.value),
+            Some(54)
+        );
+        assert_eq!(
+            event.model.as_ref().map(|value| value.value.as_str()),
+            Some("gpt-test")
+        );
+        assert_eq!(event.input_tokens.unwrap().origin, DataOrigin::Provider);
+    }
+
+    #[test]
+    fn prompt_and_shell_command_are_excluded_until_opted_in() {
+        let prompt = json!({ "type": "response_item", "payload": {
+            "type": "message", "role": "user", "content": [
+                { "type": "input_text", "text": "private prompt" }
+            ]
+        } });
+        let tool = json!({ "type": "response_item", "payload": {
+            "type": "custom_tool_call", "call_id": "call-1", "name": "shell",
+            "input": { "command": "echo private" }
+        } });
+        let mut context = SessionContext::default();
+
+        let omitted_prompt = project_record(&prompt, &mut context, false, false).unwrap();
+        let captured_prompt = project_record(&prompt, &mut context, true, false).unwrap();
+        let omitted_command = project_record(&tool, &mut context, false, false).unwrap();
+        let captured_command = project_record(&tool, &mut context, false, true).unwrap();
+
+        assert_eq!(omitted_prompt.content, None);
+        assert_eq!(captured_prompt.content.as_deref(), Some("private prompt"));
+        assert_eq!(omitted_command.command, None);
+        assert_eq!(captured_command.command.as_deref(), Some("echo private"));
+    }
+}

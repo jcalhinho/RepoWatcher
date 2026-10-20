@@ -525,3 +525,35 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claude_prompt_and_shell_command_capture_are_opt_in() {
+        let prompt = json!({
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "claude-session",
+            "cwd": "C:/work/demo",
+            "prompt": "private prompt"
+        });
+        let omitted = normalize_claude_event(&prompt, false, false).unwrap();
+        let captured = normalize_claude_event(&prompt, true, false).unwrap();
+        assert_eq!(omitted.kind, EventKind::UserMessage);
+        assert_eq!(omitted.content, None);
+        assert_eq!(captured.content.as_deref(), Some("private prompt"));
+
+        let command = json!({
+            "hook_event_name": "PreToolUse",
+            "session_id": "claude-session",
+            "tool_name": "PowerShell",
+            "tool_input": { "command": "Get-ChildItem" }
+        });
+        let omitted = normalize_claude_event(&command, false, false).unwrap();
+        let captured = normalize_claude_event(&command, false, true).unwrap();
+        assert_eq!(omitted.kind, EventKind::ToolStarted);
+        assert_eq!(omitted.command, None);
+        assert_eq!(captured.command.as_deref(), Some("Get-ChildItem"));
+    }
+}

@@ -36,8 +36,10 @@ distribution.
 ## Current implementation boundary
 
 The app currently supports four local connectors: Claude Code through its
-documented HTTP hooks, Codex/Gemini CLI through their local session logs, and
-OpenCode through its local SQLite database in read-only mode.
+documented HTTP hooks, Codex and Gemini CLI through their local session logs,
+and OpenCode through its local SQLite database in read-only mode. These are
+four implemented integrations, not universal coverage of every coding agent;
+Cursor, GitHub Copilot, Cline, Roo Code, Continue, and Aider are not connected.
 Claude Code's hook setup is shown in-app; Codex and Gemini are detected without
 editing their settings.
 The app listens only on `127.0.0.1:43821`, authenticates requests with a
@@ -88,10 +90,11 @@ subagents (`Agent` tool responses), but those figures cover the final request
 only, not the overall subagent run or parent session. The app labels and sums
 only those observed partial values; overall session token totals remain
 unavailable rather than estimated. Search,
-richer commit/diff attribution, complete transcript/tool-output capture, and
-six of the ten listed integrations remain unimplemented. Codex and Gemini history
-before RepoWatcher starts is not backfilled; usage fields remain limited to
-values present in their local session streams.
+richer commit/diff attribution and the six additional integrations listed above
+remain unimplemented. Complete transcript and tool-output capture are
+intentionally excluded by the privacy model. Codex and Gemini history before
+RepoWatcher starts is not backfilled; usage fields remain limited to values
+present in their local session streams.
 
 OpenCode is observed from `opencode*.db` in the provider's local data directory
 (`%USERPROFILE%\.local\share\opencode` on Windows, `$XDG_DATA_HOME/opencode`
@@ -110,12 +113,19 @@ records for each message.
 ## Windows build from this repository
 
 The `Build Agent Observer for Windows` workflow runs on `windows-latest` after
-relevant pushes to `main`, or manually from GitHub Actions with **Run workflow**.
-It produces NSIS `.exe` and MSI `.msi` installers as a downloadable workflow
-artifact for 30 days. The workflow must first exist on GitHub; the current local
-changes have not been pushed and no Windows artifact has been generated yet.
+relevant pushes to `agent-observer/windows-release`. It produces NSIS `.exe`
+and MSI `.msi` installers as a downloadable workflow artifact retained for 30
+days. The initial Windows build completed successfully on 2026-10-20; open the
+[successful Actions run](https://github.com/jcalhinho/RepoWatcher/actions/runs/39483768986)
+to download its `repowatcher-agent-observer-windows-x64` artifact. On a fresh
+checkout, use the dedicated branch:
 
-Once a successful run exists, open the repository's **Actions** tab, select
+```sh
+git fetch origin agent-observer/windows-release
+git switch --track origin/agent-observer/windows-release
+```
+
+For later runs, open the repository's **Actions** tab, select
 **Build Agent Observer for Windows**, open the completed run, and download
 `repowatcher-agent-observer-windows-x64`. Extract the ZIP; it contains the
 NSIS setup in `nsis/`, the MSI in `msi/`, and `installer-sha256.txt`. In
