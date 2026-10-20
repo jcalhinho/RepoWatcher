@@ -74,6 +74,13 @@ struct OpenCodeSetup {
 }
 
 #[derive(Serialize)]
+struct CursorSetup {
+    endpoint: String,
+    settings_fragment: String,
+    capture_commands: bool,
+}
+
+#[derive(Serialize)]
 struct RepositorySnapshot {
     root: String,
     project_hash: String,
@@ -151,6 +158,53 @@ fn opencode_setup(state: tauri::State<'_, CollectorState>) -> OpenCodeSetup {
         capture_prompts: state.capture_prompts.load(Ordering::Relaxed),
         capture_commands: state.capture_commands.load(Ordering::Relaxed),
     }
+}
+
+#[tauri::command]
+fn cursor_setup(
+    state: tauri::State<'_, CollectorState>,
+    app: tauri::AppHandle,
+) -> Result<CursorSetup, String> {
+    let endpoint = "http://127.0.0.1:43821/cursor-hook";
+    let token_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("collector-token");
+    let command = if cfg!(target_os = "windows") {
+        let path = token_path.display().to_string().replace('\'', "''");
+        format!(
+            r#"powershell.exe -NoProfile -NonInteractive -Command "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new(); $p=[Console]::In.ReadToEnd(); $t=(Get-Content -Raw -LiteralPath '{}').Trim(); try {{ Invoke-RestMethod -Uri '{}' -Method Post -ContentType 'application/json' -Headers @{{Authorization=('Bearer '+$t)}} -Body $p | Out-Null }} catch {{ }}"#,
+            path, endpoint
+        )
+    } else {
+        let path = serde_json::to_string(&token_path.display().to_string())
+            .map_err(|error| error.to_string())?;
+        let python = format!(
+            "import sys,json,urllib.request; p=sys.stdin.read(); t=open({path},encoding='utf-8').read().strip(); r=urllib.request.Request('{endpoint}',data=p.encode(),headers={{'Content-Type':'application/json','Authorization':'Bearer '+t}},method='POST'); urllib.request.urlopen(r,timeout=2).read()",
+            path = path,
+            endpoint = endpoint
+        );
+        format!(
+            "python3 -c {}",
+            serde_json::to_string(&python).map_err(|error| error.to_string())?
+        )
+    };
+    let hook = json!([{ "command": command, "timeout": 3 }]);
+    let fragment = json!({ "version": 1, "hooks": {
+        "sessionStart": hook,
+        "sessionEnd": hook,
+        "postToolUse": hook,
+        "postToolUseFailure": hook,
+        "afterShellExecution": hook,
+        "afterFileEdit": hook,
+        "stop": hook
+    }});
+    Ok(CursorSetup {
+        endpoint: endpoint.to_owned(),
+        settings_fragment: serde_json::to_string_pretty(&fragment).unwrap_or_default(),
+        capture_commands: state.capture_commands.load(Ordering::Relaxed),
+    })
 }
 
 #[tauri::command]
@@ -363,6 +417,117 @@ async fn receive_claude_hook(
     StatusCode::NO_CONTENT
 }
 
+async fn receive_cursor_hook(
+    State(state): State<CollectorState>,
+    request: Request,
+) -> impl IntoResponse {
+    let authorized = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == format!("Bearer {}", state.token));
+    if !authorized {
+        return StatusCode::UNAUTHORIZED;
+    }
+    let Ok(body) = axum::body::to_bytes(request.into_body(), 64 * 1024).await else {
+        return StatusCode::PAYLOAD_TOO_LARGE;
+    };
+    let Ok(input) = serde_json::from_slice::<Value>(&body) else {
+        return StatusCode::BAD_REQUEST;
+    };
+    let Some(event) =
+        normalize_cursor_event(&input, state.capture_commands.load(Ordering::Relaxed))
+    else {
+        return StatusCode::NO_CONTENT;
+    };
+    if !persist_event(&state, event) {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+    StatusCode::NO_CONTENT
+}
+
+fn normalize_cursor_event(input: &Value, capture_commands: bool) -> Option<SessionEvent> {
+    let event_name = input.get("hook_event_name")?.as_str()?;
+    let session_id = input
+        .get("conversation_id")
+        .or_else(|| input.get("session_id"))?
+        .as_str()?
+        .to_owned();
+    let kind = match event_name {
+        "sessionStart" => EventKind::SessionStarted,
+        "sessionEnd" => EventKind::SessionEnded,
+        "postToolUse" | "afterShellExecution" => EventKind::ToolFinished,
+        "postToolUseFailure" => EventKind::ToolFailed,
+        "afterFileEdit" => EventKind::FileChanged,
+        "stop" => EventKind::Checkpoint,
+        _ => return None,
+    };
+    let mut event = SessionEvent::new(session_id, Provider::Cursor, kind);
+    event.project_path = input
+        .get("cwd")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
+            input
+                .get("workspace_roots")
+                .and_then(Value::as_array)
+                .and_then(|roots| roots.first())
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    event.model = input
+        .get("model_id")
+        .or_else(|| input.get("model"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(|value| Sourced {
+            value: value.to_owned(),
+            origin: DataOrigin::Provider,
+        });
+    event.tool_name = input
+        .get("tool_name")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    event.file_path = input
+        .get("file_path")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let tool_input = input.get("tool_input");
+    event.file_path = event.file_path.or_else(|| {
+        tool_input
+            .and_then(|value| value.get("file_path").or_else(|| value.get("path")))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    });
+    if capture_commands
+        && matches!(
+            event_name,
+            "afterShellExecution" | "postToolUse" | "postToolUseFailure"
+        )
+    {
+        event.command = input
+            .get("command")
+            .or_else(|| tool_input.and_then(|value| value.get("command")))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+    }
+    event.duration_ms = input
+        .get("duration")
+        .or_else(|| input.get("duration_ms"))
+        .and_then(Value::as_u64)
+        .map(|value| Sourced {
+            value,
+            origin: DataOrigin::Provider,
+        });
+    event.outcome = input
+        .get("status")
+        .or_else(|| input.get("failure_type"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    // Never retain Cursor tool outputs, transcript paths, user identity, or thinking text.
+    Some(event)
+}
+
 fn normalize_claude_event(
     input: &Value,
     capture_prompts: bool,
@@ -477,6 +642,7 @@ fn main() {
             let address = SocketAddr::from(([127, 0, 0, 1], port));
             let router = Router::new()
                 .route("/claude-hook", post(receive_claude_hook))
+                .route("/cursor-hook", post(receive_cursor_hook))
                 .with_state(state.clone());
             let handle = app.handle().clone();
             let status = state.status.clone();
@@ -521,7 +687,7 @@ fn main() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, load_session_events, export_session_history, repository_snapshot, collector_status, update_capture_policy, clear_session_history])
+        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, cursor_setup, load_session_events, export_session_history, repository_snapshot, collector_status, update_capture_policy, clear_session_history])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }
@@ -529,6 +695,67 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cursor_tool_and_file_events_exclude_outputs_and_gate_commands() {
+        let input = json!({
+            "hook_event_name": "postToolUse",
+            "conversation_id": "cursor-conversation",
+            "generation_id": "generation-2",
+            "model_id": "cursor-model",
+            "cwd": "C:/work/repo",
+            "tool_name": "Shell",
+            "tool_input": { "command": "Get-ChildItem" },
+            "tool_output": "must not be retained",
+            "duration": 1250
+        });
+        let omitted = normalize_cursor_event(&input, false).unwrap();
+        assert_eq!(omitted.provider, Provider::Cursor);
+        assert_eq!(omitted.kind, EventKind::ToolFinished);
+        assert_eq!(omitted.command, None);
+        assert_eq!(
+            omitted.model.as_ref().map(|value| value.value.as_str()),
+            Some("cursor-model")
+        );
+        assert_eq!(
+            omitted.duration_ms.as_ref().map(|value| value.value),
+            Some(1250)
+        );
+        let captured = normalize_cursor_event(&input, true).unwrap();
+        assert_eq!(captured.command.as_deref(), Some("Get-ChildItem"));
+        assert_eq!(captured.content, None);
+
+        let edit = json!({
+            "hook_event_name": "afterFileEdit",
+            "conversation_id": "cursor-conversation",
+            "file_path": "C:/work/repo/src/main.rs",
+            "edits": [{"old_string": "secret", "new_string": "replacement"}]
+        });
+        let event = normalize_cursor_event(&edit, false).unwrap();
+        assert_eq!(event.kind, EventKind::FileChanged);
+        assert_eq!(event.file_path.as_deref(), Some("C:/work/repo/src/main.rs"));
+        assert_eq!(event.content, None);
+    }
+
+    #[test]
+    fn cursor_session_events_require_session_identity_and_drop_unrecognized_hooks() {
+        assert!(
+            normalize_cursor_event(&json!({"hook_event_name":"sessionStart"}), false).is_none()
+        );
+        assert!(
+            normalize_cursor_event(
+                &json!({"hook_event_name":"workspaceOpen","workspace_roots":[]}),
+                false
+            )
+            .is_none()
+        );
+        let ended = normalize_cursor_event(&json!({"hook_event_name":"sessionEnd","session_id":"s-1","duration_ms":2000,"reason":"completed"}), false).unwrap();
+        assert_eq!(ended.kind, EventKind::SessionEnded);
+        assert_eq!(
+            ended.duration_ms.as_ref().map(|value| value.value),
+            Some(2000)
+        );
+    }
 
     #[test]
     fn claude_prompt_and_shell_command_capture_are_opt_in() {

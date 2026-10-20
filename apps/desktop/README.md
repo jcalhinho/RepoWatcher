@@ -35,20 +35,23 @@ distribution.
 
 ## Current implementation boundary
 
-The app currently supports four local connectors: Claude Code through its
+The app currently supports five local connectors: Claude Code through its
 documented HTTP hooks, Codex and Gemini CLI through their local session logs,
-and OpenCode through its local SQLite database in read-only mode. These are
-four implemented integrations, not universal coverage of every coding agent;
-Cursor, GitHub Copilot, Cline, Roo Code, Continue, and Aider are not connected.
-Claude Code's hook setup is shown in-app; Codex and Gemini are detected without
-editing their settings.
+OpenCode through its local SQLite database in read-only mode, and Cursor through
+its documented user hooks. These are five implemented integrations, not
+universal coverage of every coding agent; GitHub Copilot, Cline, Roo Code,
+Continue, and Aider are not connected. Claude Code and Cursor hook setup is
+shown in-app; Codex and Gemini are detected without editing their settings.
 The app listens only on `127.0.0.1:43821`, authenticates requests with a
 generated local bearer token, and exposes a settings fragment for the user to
 merge manually into Claude Code's user settings (`~/.claude/settings.json`, or
 `%USERPROFILE%\\.claude\\settings.json` on Windows). It does not overwrite
-Claude settings. Generate and apply a separate fragment on each PC: the local
-authentication token is installation-specific. The hooks are observational
-(`onFailure: continue`) and cannot block agent work.
+Claude settings. Cursor's user hook fragment is likewise displayed for manual
+merge into `~/.cursor/hooks.json`; it uses a local PowerShell command on Windows
+and Python 3 on macOS/Linux to forward hook JSON to the authenticated loopback
+endpoint. Generate and apply a separate fragment on each PC: the local
+authentication token is installation-specific. Cursor's configured hooks are
+post-action observers and do not participate in permission decisions.
 
 The live view receives prompt-submitted, tool-started/tool-finished/tool-failed,
 turn-stop, and session-end metadata. By default, prompt and shell-command text,
@@ -109,6 +112,15 @@ token counts are collected when present. Prompt text and command input follow
 the shared opt-in switches; assistant text, reasoning, tool output, and tool
 results are never stored. Exact token semantics depend on the fields OpenCode
 records for each message.
+
+Cursor's user hooks cover session start/end, successful and failed tool
+metadata, shell-command completion, file edits, and agent-loop stop events.
+The configuration is manual and opt-in; a Cursor session must run while Agent
+Observer is open to receive events. Tool outputs, edit contents, prompts,
+assistant responses, transcript paths, user identity, and thinking text are
+excluded. Shell/tool command strings are retained only with the shared
+command-capture preference enabled. Cursor hooks do not document token usage,
+so its token charts remain blank rather than estimated.
 
 ## Windows build from this repository
 

@@ -3,7 +3,7 @@
 > **Desktop agent observability:** an initial Windows build of the separate
 > Tauri desktop app is available for testing from
 > [apps/desktop](./apps/desktop/README.md). It observes real
-> Claude Code hooks and Codex/Gemini CLI/OpenCode session data locally, persists
+> Claude Code/Cursor hooks and Codex/Gemini CLI/OpenCode session data locally, persists
 > operational metadata in SQLite, displays a live activity chart, and reads
 > Git status from a user-selected repository. It is
 > distinct from the existing RepoWatcher repository-exploration web app.
