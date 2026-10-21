@@ -21,6 +21,7 @@ import { useObserver } from "./useObserver";
 import { useWorkspace } from "./useWorkspace";
 import { useFocusAgent } from "./useFocusAgent";
 import { FocusToast } from "./FocusToast";
+import { NotificationCenter } from "./NotificationCenter";
 import { providers } from "./providers";
 import { filterByRepository, pathKey, type RepositoryFilter } from "./workspace";
 import { RepositoryFilterBar, WorkspaceSwitcher, useRepositoryActivity } from "./WorkspaceViews";
@@ -65,6 +66,7 @@ export function App() {
     if (!pulse.session) return;
     void focus.goTo({ provider: pulse.key, sessionId: pulse.session.id, projectPath: pulse.project?.project_path ?? null, agentName: providers.find((provider) => provider.eventKey === pulse.key)?.name ?? pulse.key });
   };
+  const watcher = <NotificationCenter events={agentWindow.events} onGoTo={(target) => void focus.goTo(target)} />;
   const toast = <FocusToast toast={focus.toast} onReveal={(path) => void focus.revealFolder(path)} onDismiss={focus.dismiss} />;
   const repositoryName = (pulse: AgentPulse) => (pulse.project ? workspace.repositoryOf(pulse.project)?.name ?? null : null);
 
@@ -95,7 +97,7 @@ export function App() {
   }
 
   if (compact) {
-    return <><MiniView agentEvents={agentWindow.events} collectorState={observer.collectorState} pinned={miniPinned} onTogglePin={() => { setMiniPinnedPreference(!miniPinned); void setMiniPinned(!miniPinned); }} onExpand={leaveMini} repositoryName={repositoryName} onGoTo={goToAgent} />{toast}</>;
+    return <><MiniView agentEvents={agentWindow.events} collectorState={observer.collectorState} pinned={miniPinned} onTogglePin={() => { setMiniPinnedPreference(!miniPinned); void setMiniPinned(!miniPinned); }} onExpand={leaveMini} repositoryName={repositoryName} onGoTo={goToAgent} />{watcher}{toast}</>;
   }
 
   return <div className="app">
@@ -119,6 +121,7 @@ export function App() {
     </nav>
 
     <main className="app-main">
+      {watcher}
       {tab === "overview" && <>
         <RepositoryFilterBar model={workspace} filter={filter} onFilter={setRepositoryFilter} activity={repositoryActivity} outside={outside} total={chartWindow.events.length} />
         <OverviewPage

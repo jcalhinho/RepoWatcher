@@ -478,3 +478,13 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 .toast > span { display: grid; gap: 2px; color: var(--text-2); }
 .toast b { color: var(--text); }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
+
+/* ---------- Alerts ---------- */
+.alert-banners { display: grid; gap: 6px; margin-bottom: var(--space-4); }
+.alert-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid #f0716777; border-radius: var(--radius); background: #2c1518; color: #ffd4d0; font-size: 13.5px; animation: alert-in 220ms ease-out; }
+.alert-banner.looping { border-color: #ff8f5a88; background: #2e1d14; color: #ffe0cf; }
+.alert-banner svg { flex: none; color: var(--bad); }
+.alert-banner.looping svg { color: var(--loop); }
+.alert-banner span { flex: 1; min-width: 0; }
+.mini-view .alert-banners { margin: 8px 8px 0; }
+@keyframes alert-in { from { transform: translateY(-4px); opacity: 0; } }

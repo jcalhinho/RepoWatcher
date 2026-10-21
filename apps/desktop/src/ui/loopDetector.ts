@@ -23,7 +23,7 @@ function recentCalls(events: SessionEvent[]): Call[] {
   // Only the turn in progress: a finished turn or a new prompt resets the history.
   let start = 0;
   ordered.forEach((event, index) => {
-    if (event.kind === "user_message" || event.kind === "session_ended" || (event.kind === "checkpoint" && !(event.outcome ?? "").startsWith("turn-started"))) start = index + 1;
+    if (event.kind === "user_message" || event.kind === "session_ended" || (event.kind === "checkpoint" && !/^(turn-started|attention:)/.test(event.outcome ?? ""))) start = index + 1;
   });
   const calls: Call[] = [];
   const hasStarts = ordered.slice(start).some((event) => event.kind === "tool_started");

@@ -71,6 +71,8 @@ export function isTurnStart(provider: string, event: RaceEvent) {
 }
 
 export function isTurnComplete(provider: string, event: RaceEvent) {
+  // Claude asking for a permission is a pause, not the end of the turn.
+  if ((event.outcome ?? "").startsWith("attention:")) return false;
   if (provider === "codex") return event.kind === "checkpoint" && event.outcome?.startsWith("turn-complete:") === true;
   return event.kind === "checkpoint";
 }

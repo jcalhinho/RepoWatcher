@@ -107,6 +107,12 @@ export function narrateEvent(event: ActivityEvent): Narration | null {
       return { text: "Réfléchit avec le modèle", detail: [event.model?.value, tokens, duration].filter(Boolean).join(" · ") || null, tone: "work" };
     }
     case "checkpoint": {
+      if ((event.outcome ?? "").startsWith("attention:")) {
+        const message = event.outcome!.slice("attention:".length);
+        return /permission|approve|autoris/i.test(message)
+          ? { text: "Attend ta validation", detail: message || null, tone: "info" }
+          : { text: "Attend ton message", detail: message || null, tone: "info" };
+      }
       const failed = /error|fail|cancel/.test(event.outcome || "");
       if (failed) return { text: "Tour interrompu", detail: event.outcome?.replace(/^turn-/, "statut : ") ?? null, tone: "failure" };
       return { text: "Tour terminé", detail: duration ? `en ${duration}` : null, tone: "success" };

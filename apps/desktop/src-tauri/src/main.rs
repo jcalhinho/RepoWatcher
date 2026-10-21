@@ -146,6 +146,7 @@ fn claude_setup(state: tauri::State<'_, CollectorState>) -> ClaudeSetup {
         "PostToolUse": hook(),
         "PostToolUseFailure": hook(),
         "Stop": hook(),
+        "Notification": hook(),
         "SessionEnd": hook()
     }});
     ClaudeSetup {
@@ -804,6 +805,8 @@ fn normalize_claude_event(
         "PostToolUse" => EventKind::ToolFinished,
         "PostToolUseFailure" => EventKind::ToolFailed,
         "Stop" => EventKind::Checkpoint,
+        // Claude asks for a permission or waits for the user: not the end of a turn.
+        "Notification" => EventKind::Checkpoint,
         "SessionEnd" => EventKind::SessionEnded,
         _ => return None,
     };
@@ -834,6 +837,11 @@ fn normalize_claude_event(
         .get("error")
         .and_then(Value::as_str)
         .map(|_| "failed".to_owned());
+    if event_name == "Notification" {
+        // Claude's own system message ("Claude needs your permission to use Bash"), never user text.
+        let message: String = input.get("message").and_then(Value::as_str).unwrap_or("").chars().take(160).collect();
+        event.outcome = Some(format!("attention:{message}"));
+    }
     if event_name == "PostToolUse" && event.tool_name.as_deref() == Some("Agent") {
         let response = input.get("tool_response");
         if let Some(usage) = response.and_then(|value| value.get("usage")) {
@@ -884,6 +892,7 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             fs::create_dir_all(&config_dir)?;
@@ -1085,6 +1094,15 @@ mod tests {
         assert_eq!(commits[0].subject, "inside: a\u{1f}b");
         assert_eq!(commits[0].author, "Bob");
         assert_eq!(commits[0].committed_at, "1970-01-01T00:02:30+00:00");
+    }
+
+    #[test]
+    fn claude_notification_hook_marks_attention_without_user_text() {
+        let input = json!({ "hook_event_name": "Notification", "session_id": "s", "message": "Claude needs your permission to use Bash", "cwd": "/w" });
+        let event = normalize_claude_event(&input, false, false).unwrap();
+        assert_eq!(event.kind, EventKind::Checkpoint);
+        assert_eq!(event.outcome.as_deref(), Some("attention:Claude needs your permission to use Bash"));
+        assert_eq!(event.content, None);
     }
 
     #[test]

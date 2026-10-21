@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SectionHeader } from "./Explain";
+import { NOTICE_KINDS, type NoticeKind } from "./notificationRules";
+import { isBoolean, usePreference } from "./preferences";
 
 type CapturePolicy = { capture_prompts: boolean; capture_commands: boolean };
 
@@ -51,6 +53,8 @@ export function SettingsPage({ onExport, onClear, onMini }: { onExport: () => Pr
       <Toggle checked={policy?.capture_commands ?? false} disabled={!policy} onChange={(value) => policy && savePolicy({ ...policy, capture_commands: value })} title="Enregistrer les commandes lancées par les agents" hint="Par exemple « npm test ». Une commande peut contenir un mot de passe ou un jeton : à activer en connaissance de cause." />
     </div>
 
+    <NotificationSettings />
+
     <div className="settings-group">
       <h3>Combien de temps</h3>
       <label className="setting-row">
@@ -89,4 +93,19 @@ function Toggle({ checked, disabled, onChange, title, hint }: { checked: boolean
     <span><b>{title}</b><small>{hint}</small></span>
     <input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
   </label>;
+}
+
+function NotificationSettings() {
+  const [enabled, setEnabled] = usePreference("notify.enabled", true, isBoolean);
+  return <div className="settings-group">
+    <h3>Notifications</h3>
+    <p>L’app te prévient quand un agent a besoin de toi, même si elle est en arrière-plan. Un clic sur la notification t’amène directement à l’agent. Les <b>alertes</b> (boucle, erreurs) ont un son distinct et s’affichent aussi en rouge en haut de l’app.</p>
+    <Toggle checked={enabled} disabled={false} onChange={setEnabled} title="Activer les notifications" hint="Coupe toutes les notifications d’un coup (le badge et les bandeaux restent)." />
+    {NOTICE_KINDS.map((entry) => <KindToggle key={entry.kind} kind={entry.kind} label={entry.alert ? `⚠ ${entry.label}` : entry.label} hint={entry.hint} disabled={!enabled} />)}
+  </div>;
+}
+
+function KindToggle({ kind, label, hint, disabled }: { kind: NoticeKind; label: string; hint: string; disabled: boolean }) {
+  const [checked, setChecked] = usePreference(`notify.${kind}`, kind !== "stalled", isBoolean);
+  return <Toggle checked={checked} disabled={disabled} onChange={setChecked} title={label} hint={hint} />;
 }
