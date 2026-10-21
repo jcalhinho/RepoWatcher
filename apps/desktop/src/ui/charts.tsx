@@ -11,19 +11,20 @@ function niceMax(value: number) {
   return step * power;
 }
 
-function useWidth<T extends HTMLElement>() {
+/** Measured content box of an element, so charts follow their (resizable) container. */
+function useSize<T extends HTMLElement>() {
   const ref = useRef<T>(null);
-  const [width, setWidth] = useState(600);
+  const [size, setSize] = useState({ width: 600, height: 190 });
   useLayoutEffect(() => {
     const node = ref.current;
     if (!node) return;
-    setWidth(node.clientWidth || 600);
+    setSize({ width: node.clientWidth || 600, height: node.clientHeight || 190 });
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width || 600));
+    const observer = new ResizeObserver(([entry]) => setSize({ width: entry.contentRect.width || 600, height: entry.contentRect.height || 190 }));
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-  return [ref, width] as const;
+  return [ref, size] as const;
 }
 
 function timeLabel(time: number, axis: TimeAxis) {
@@ -34,8 +35,10 @@ function timeLabel(time: number, axis: TimeAxis) {
 }
 
 /** Multi-series time line chart with a crosshair tooltip; one shared y-axis, never two. */
-export function LineChart({ series, axis, height = 190, format, unit, emptyText }: { series: LineSeries[]; axis: TimeAxis; height?: number; format: (value: number) => string; unit: string; emptyText: string }) {
-  const [frame, width] = useWidth<HTMLDivElement>();
+export function LineChart({ series, axis, format, unit, emptyText }: { series: LineSeries[]; axis: TimeAxis; format: (value: number) => string; unit: string; emptyText: string }) {
+  const [frame, size] = useSize<HTMLDivElement>();
+  const width = size.width;
+  const height = Math.max(110, size.height);
   const [hover, setHover] = useState<number | null>(null);
   const visible = series.filter((line) => line.values.some(Boolean));
   const margin = { top: 12, right: 14, bottom: 24, left: 44 };
@@ -56,8 +59,9 @@ export function LineChart({ series, axis, height = 190, format, unit, emptyText 
   const tooltipRows = hover === null ? [] : visible.map((line) => ({ line, value: line.values[hover] })).sort((a, b) => b.value - a.value);
   const tooltipLeft = hover === null ? 0 : Math.min(width - 210, Math.max(0, x(hover) + 12));
 
-  return <div className="line-chart" ref={frame}>
+  return <div className="line-chart">
     {visible.length > 1 && <div className="chart-legend-row">{visible.map((line) => <span key={line.key}><i style={{ background: line.color }} />{line.label}<b>{format(line.values.reduce((sum, value) => sum + value, 0))}</b></span>)}</div>}
+    <div className="line-chart-plot" ref={frame}>
     {visible.length ? <svg width={width} height={height} role="img" aria-label={`${unit} par tranche de temps`}>
       {ticks.map((tick) => <g key={tick}><line className="chart-grid" x1={margin.left} x2={margin.left + plotWidth} y1={y(tick)} y2={y(tick)} /><text className="chart-axis-label" x={margin.left - 7} y={y(tick)} textAnchor="end" dominantBaseline="middle">{format(tick)}</text></g>)}
       {[0, Math.floor((axis.buckets - 1) / 2), axis.buckets - 1].map((index) => <text key={index} className="chart-axis-label" x={x(index)} y={height - 6} textAnchor={index === 0 ? "start" : index === axis.buckets - 1 ? "end" : "middle"}>{index === axis.buckets - 1 ? "maintenant" : timeLabel(bucketStart(index), axis)}</text>)}
@@ -65,10 +69,11 @@ export function LineChart({ series, axis, height = 190, format, unit, emptyText 
       {hover !== null && <g className="chart-crosshair"><line x1={x(hover)} x2={x(hover)} y1={margin.top} y2={margin.top + plotHeight} />{visible.map((line) => <circle key={line.key} cx={x(hover)} cy={y(line.values[hover])} r={4} style={{ fill: line.color }} />)}</g>}
       <rect className="chart-hit" x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} onPointerMove={onMove} onPointerLeave={() => setHover(null)} />
     </svg> : <div className="chart-empty" style={{ height }}>{emptyText}</div>}
-    {hover !== null && visible.length > 0 && <div className="chart-tooltip" style={{ left: tooltipLeft, top: 34 }} role="status">
+    {hover !== null && visible.length > 0 && <div className="chart-tooltip" style={{ left: tooltipLeft, top: 8 }} role="status">
       <b>{timeLabel(bucketStart(hover), axis)} → {timeLabel(bucketStart(hover) + axis.bucketMs, axis)}</b>
       {tooltipRows.map(({ line, value }) => <span key={line.key}><i style={{ background: line.color }} />{line.label}<em>{format(value)} {unit}</em></span>)}
     </div>}
+    </div>
     {visible.length > 0 && <table className="sr-only"><caption>{unit} par tranche</caption><thead><tr><th>Début</th>{visible.map((line) => <th key={line.key}>{line.label}</th>)}</tr></thead><tbody>{Array.from({ length: axis.buckets }, (_, index) => <tr key={index}><td>{timeLabel(bucketStart(index), axis)}</td>{visible.map((line) => <td key={line.key}>{line.values[index]}</td>)}</tr>)}</tbody></table>}
   </div>;
 }

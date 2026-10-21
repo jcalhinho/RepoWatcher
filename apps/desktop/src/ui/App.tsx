@@ -13,6 +13,7 @@ import { EventFeed } from "./EventFeed";
 import { ProviderMark } from "./ProviderBadges";
 import { providerById, type ConnectorKind } from "./providers";
 import { RepositoryMap } from "./RepositoryMap";
+import { Resizable } from "./Resizable";
 import { SessionExplorer } from "./SessionExplorer";
 import { SprintTrack } from "./SprintTrack";
 import { compareEventsNewestFirst, formatCount, sessionKey, type RepositorySnapshot, type SessionEvent } from "./types";
@@ -171,6 +172,7 @@ export function App() {
 
           <SessionAnalytics events={events} />
 
+          <Resizable id="activity-connectors" defaultHeight={320} min={160} max={1400} label="l’activité récente et les connecteurs">
           <section className="content-grid">
             <div className="panel session-panel">
               <div className="panel-heading"><div><div className="panel-title-row"><h2>Activité récente</h2><span className="live-indicator"><span /> {events.length ? "FLUX AGENTS CONNECTÉS" : "EN ATTENTE DU PREMIER ÉVÉNEMENT"}</span></div><p>Événements réels reçus localement ; texte sensible non conservé par défaut.</p></div></div>
@@ -185,6 +187,7 @@ export function App() {
               })}</div>
             </div>
           </section>
+          </Resizable>
 
           <section className="bottom-grid">
             <div className="panel repo-panel"><div className="panel-heading compact"><div><h2>Carte du dépôt</h2><p>{repoPath || "Choisis un dépôt pour afficher son état Git et les fichiers observés."}</p></div><button className="outline-button" onClick={() => showView("repo-map")}>Détails Git</button></div>{repoSnapshot ? <div className="repo-summary"><b>{repoSnapshot.branch || "HEAD détachée"}</b><span>{repoSnapshot.changed_files.length} changements non commités</span><span>{repoSnapshot.recent_commits.length} commits récents</span></div> : <div className="repo-empty"><div className="repo-grid-icon"><FolderGit2 size={21} /></div><span>{repoPath ? "État Git indisponible — vérifie que Git est installé et ce dossier est un dépôt." : "Choisis un dépôt local pour lire son état Git."}</span></div>}</div>

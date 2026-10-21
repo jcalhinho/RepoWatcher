@@ -525,3 +525,36 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .event-row.failure .event-detail { color: #ff9b9b; }
 .event-row.success .event-detail { color: #d6e9da; }
 .sprint-panel.mode-2d .sprint-lanes { padding-top: 38px; }
+
+/* Resizable sections: drag the bottom handle, or maximize to the whole window. */
+.resizable { position: relative; height: var(--section-height); margin-bottom: 14px; }
+.resizable-body { height: 100%; min-height: 0; }
+.resizable-body > * { height: 100%; box-sizing: border-box; }
+.resizable-handle { position: absolute; left: 0; right: 0; bottom: -11px; z-index: 6; height: 10px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; }
+.resizable-handle span { width: 46px; height: 4px; border-radius: 3px; background: #3a4250; transition: background 120ms, width 120ms; }
+.resizable-handle:hover span, .resizable-handle:focus-visible span { width: 74px; background: #8fa0ff; }
+.resizable-handle:focus-visible { outline: none; }
+.resizable-maximize { position: absolute; top: 7px; right: 7px; z-index: 7; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid #3a4250; border-radius: 7px; background: #11151dd9; color: #aab4c6; cursor: pointer; opacity: .55; transition: opacity 120ms; }
+.resizable:hover > .resizable-maximize, .resizable-maximize:focus-visible, .resizable.is-maximized > .resizable-maximize { opacity: 1; }
+.resizable-maximize:hover { color: #eef1ff; border-color: #8fa0ff; }
+.resizable.is-maximized { position: fixed; inset: 12px; z-index: 60; height: auto; margin: 0; padding: 12px; border: 1px solid #3a4250; border-radius: 12px; background: var(--bg); box-shadow: 0 24px 80px #000c; overflow: auto; }
+.resizable.is-maximized > .resizable-maximize { top: 14px; right: 14px; }
+/* Contents that follow the section height. */
+.resizable .sprint-stage, .sprint-panel.mode-3d .resizable .sprint-stage { height: 100%; }
+.resizable .agent-logs { margin-top: 0; overflow: auto; align-items: start; padding-right: 2px; }
+.sprint-panel.mode-3d .resizable { margin-top: 0; }
+.sprint-panel .resizable + .resizable { margin-top: 18px; }
+.resizable .analytics-lines { margin-bottom: 0; grid-template-rows: 100%; }
+.resizable .analytics-bars { grid-auto-rows: calc(50% - 6px); overflow: auto; }
+.resizable .chart-card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.resizable .analytics-bars .chart-card { overflow: auto; }
+.line-chart { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.line-chart-plot { position: relative; flex: 1 1 auto; min-height: 110px; }
+.line-chart-plot > svg { position: absolute; inset: 0; }
+.resizable .content-grid { height: 100%; }
+.resizable .session-panel, .resizable .connectors-panel { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.resizable .session-panel .event-feed { flex: 1 1 auto; max-height: none; min-height: 0; overflow: auto; }
+.resizable .overview-connectors { flex: 1 1 auto; min-height: 0; overflow: auto; }
+@media (max-width: 1250px) { .resizable .analytics-bars { grid-auto-rows: calc(33.3% - 8px); } }
+@media (max-width: 850px) { .resizable .analytics-lines { grid-template-rows: none; grid-auto-rows: 50%; overflow: auto; }.resizable .analytics-bars { grid-auto-rows: 260px; } }
+.resizable.is-maximized { padding-top: 46px; }

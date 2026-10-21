@@ -4,6 +4,7 @@ import { deriveRaceState, isTurnComplete } from "./race";
 import type { RaceLane } from "./SprintTrack3D";
 import { raceProviders } from "./providers";
 import { ProviderMark } from "./ProviderBadges";
+import { Resizable } from "./Resizable";
 import type { SessionEvent } from "./types";
 import { useNow } from "./useNow";
 
@@ -11,7 +12,7 @@ const SprintTrack3D = lazy(() => import("./SprintTrack3D"));
 
 /** A bubble stays up while the agent's latest action is this recent. */
 const BUBBLE_MAX_AGE_MS = 3 * 60_000;
-const LOG_LENGTH = 4;
+const LOG_LENGTH = 12;
 
 type LoggedAction = Narration & { id: string; at: number };
 
@@ -66,11 +67,11 @@ export function SprintTrack({ events, liveEventIds }: { events: SessionEvent[]; 
     </div>
     <div className="track-mode" role="group" aria-label="Rendu de la piste"><button className={mode === "3d" ? "selected" : ""} onClick={() => chooseMode("3d")} aria-pressed={mode === "3d"}>3D</button><button className={mode === "2d" ? "selected" : ""} onClick={() => chooseMode("2d")} aria-pressed={mode === "2d"}>2D</button></div>
     {mode === "3d" ? <>
-      <div className="sprint-stage"><Suspense fallback={<div className="sprint-stage-loading">Chargement du stade…</div>}><SprintTrack3D lanes={lanes3d} reducedMotion={reducedMotion} /></Suspense></div>
-      <div className="agent-logs">{states.map(({ provider, state, statusText, log }) => <div className={`agent-log ${state.status}`} key={provider.id} style={{ "--runner-color": provider.color } as CSSProperties}>
+      <Resizable id="race-stage" defaultHeight={430} min={220} max={1200} label="la piste 3D"><div className="sprint-stage"><Suspense fallback={<div className="sprint-stage-loading">Chargement du stade…</div>}><SprintTrack3D lanes={lanes3d} reducedMotion={reducedMotion} /></Suspense></div></Resizable>
+      <Resizable id="agent-logs" defaultHeight={250} min={110} max={1000} label="les journaux des agents"><div className="agent-logs">{states.map(({ provider, state, statusText, log }) => <div className={`agent-log ${state.status}`} key={provider.id} style={{ "--runner-color": provider.color } as CSSProperties}>
         <div className="agent-log-heading"><ProviderMark provider={provider} small /><span>{provider.name}</span><small>{statusText}</small><b>{state.progress} m</b></div>
         {log.length ? <ol>{log.map((action) => <li key={action.id} className={action.tone}><time title={new Date(action.at).toLocaleTimeString("fr-FR")}>{ago(action.at, now)}</time><span>{action.text}{action.detail && <small>{action.detail}</small>}</span></li>)}</ol> : <p className="agent-log-empty">Aucune action observée pour l’instant.</p>}
-      </div>)}</div>
+      </div>)}</div></Resizable>
     </> : <>
     <div className="track-axis" aria-hidden="true"><span>DÉPART</span><i>25 M</i><i>50 M</i><i>75 M</i><b>ARRIVÉE</b></div>
     <div className="sprint-lanes">

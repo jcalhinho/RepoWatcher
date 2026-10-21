@@ -65,7 +65,7 @@ export function toolCallsByAgent(events: SessionEvent[], providerKeys: string[])
 
 export type ToolUsage = { name: string; calls: number; failed: number };
 
-export function topTools(events: SessionEvent[], limit = 8): ToolUsage[] {
+export function topTools(events: SessionEvent[], limit = 15): ToolUsage[] {
   const usage = new Map<string, ToolUsage>();
   for (const event of events) {
     if (!event.tool_name || (event.kind !== "tool_started" && event.kind !== "tool_failed")) continue;
@@ -82,7 +82,7 @@ const WRITE_TOOL = /edit|write|patch|create|replace|multi_?edit|file_changed/i;
 export type FileTouch = { path: string; reads: number; writes: number };
 
 /** Most touched files, split between reads and modifications (by tool name or file_changed events). */
-export function topFiles(events: SessionEvent[], limit = 8): FileTouch[] {
+export function topFiles(events: SessionEvent[], limit = 15): FileTouch[] {
   const files = new Map<string, FileTouch>();
   for (const event of events) {
     if (!event.file_path || (event.kind !== "tool_started" && event.kind !== "file_changed")) continue;
@@ -126,7 +126,7 @@ export function turnDurations(events: SessionEvent[], providerKeys: string[]): A
 
 export type ModelUsage = { model: string; requests: number; tokens: number };
 
-export function modelsUsed(events: SessionEvent[], limit = 6): ModelUsage[] {
+export function modelsUsed(events: SessionEvent[], limit = 12): ModelUsage[] {
   const models = new Map<string, ModelUsage>();
   for (const event of events) {
     if (event.kind !== "model_usage" || !event.model) continue;

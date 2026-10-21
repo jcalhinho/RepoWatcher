@@ -4,6 +4,7 @@ import {
   tokensByAgent, topFiles, topTools, totalTokens, turnDurations, type AnalyticsRange
 } from "./analytics";
 import { BarList, LineChart, type BarRow } from "./charts";
+import { Resizable } from "./Resizable";
 import { chartProviders, providers } from "./providers";
 import { sessionKey, type SessionEvent } from "./types";
 import { useNow } from "./useNow";
@@ -95,10 +96,13 @@ export function SessionAnalytics({ events }: { events: SessionEvent[] }) {
       <div><h2 id="analytics-title">Analyse des sessions</h2><p>{summary}</p></div>
       <div className="range-filter" role="group" aria-label="Période analysée">{(Object.keys(RANGE_LABELS) as AnalyticsRange[]).map((key) => <button key={key} className={key === range ? "selected" : ""} aria-pressed={key === range} onClick={() => setChosen(key)}>{RANGE_LABELS[key]}</button>)}</div>
     </div>
+    <Resizable id="analytics-lines" defaultHeight={300} min={180} max={1000} label="les courbes d’activité et de tokens">
     <div className="analytics-lines">
       <ChartCard title="Activité des agents" note="événements reçus par tranche, par agent"><LineChart series={lines(data.activity)} axis={data.axis} format={formatCompact} unit="événements" emptyText={empty} /></ChartCard>
       <ChartCard title="Tokens consommés" note="entrée + sortie, valeurs fournies par les connecteurs"><LineChart series={lines(data.tokenSeries)} axis={data.axis} format={formatCompact} unit="tokens" emptyText="Aucun compteur de tokens fourni sur cette période." /></ChartCard>
     </div>
+    </Resizable>
+    <Resizable id="analytics-bars" defaultHeight={560} min={220} max={1600} label="les graphiques en barres">
     <div className="analytics-bars">
       <ChartCard title="Appels d’outils par agent" note="terminés, dont échecs"><BarList rows={callRows} format={formatCompact} legend={[{ label: "échecs (hachuré)", color: FAILURE, pattern: true }]} emptyText="Aucun appel d’outil terminé." /></ChartCard>
       <ChartCard title="Outils les plus utilisés" note="appels lancés, échecs hachurés"><BarList rows={toolRows} format={formatCompact} emptyText="Aucun outil utilisé." /></ChartCard>
@@ -107,6 +111,7 @@ export function SessionAnalytics({ events }: { events: SessionEvent[] }) {
       <ChartCard title="Durée des tours" note="moyenne des durées rapportées"><BarList rows={turnRows} format={formatDuration} emptyText="Aucune durée de tour rapportée." /></ChartCard>
       <ChartCard title="Modèles utilisés" note="tokens et requêtes par modèle"><BarList rows={modelRows} format={formatCompact} emptyText="Aucun modèle rapporté." /></ChartCard>
     </div>
+    </Resizable>
   </section>;
 }
 
