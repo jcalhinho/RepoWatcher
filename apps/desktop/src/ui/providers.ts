@@ -1,4 +1,4 @@
-export type ConnectorKind = "claude" | "codex" | "gemini" | "opencode" | "cursor";
+export type ConnectorKind = "claude" | "codex" | "gemini" | "opencode" | "cursor" | "qwen";
 
 export type Provider = {
   /** Stable UI identifier (React keys, 3D lane ids). */
@@ -21,6 +21,7 @@ export const providers: Provider[] = [
   { id: "opencode", eventKey: "opencode", name: "OpenCode", initials: "O", color: "#8dc8c1", surface: "#203633", connector: { kind: "opencode", scope: "SQLite local" } },
   { id: "copilot", eventKey: "github_copilot", name: "GitHub Copilot", initials: "⌘", color: "#c1b5ff", surface: "#302a43" },
   { id: "gemini", eventKey: "gemini_cli", name: "Gemini CLI", initials: "✳", color: "#9db9ff", surface: "#252f49", connector: { kind: "gemini", scope: "Journaux locaux" } },
+  { id: "qwen", eventKey: "qwen_code", name: "Qwen Code", initials: "Q", color: "#8f8aff", surface: "#28264a", connector: { kind: "qwen", scope: "Journaux locaux" } },
   { id: "cline", eventKey: "cline", name: "Cline", initials: "C", color: "#efb477", surface: "#3c3023" },
   { id: "roo", eventKey: "roo_code", name: "Roo Code", initials: "R", color: "#80c99c", surface: "#24382c" },
   { id: "continue", eventKey: "continue", name: "Continue", initials: "↳", color: "#c0c7d4", surface: "#30343c" },
@@ -34,4 +35,4 @@ export function providerById(id: string): Provider {
 }
 
 /** Lane order of the sprint track. */
-export const raceProviders: Provider[] = ["claude_code", "codex", "opencode", "gemini", "cursor"].map(providerById);
+export const raceProviders: Provider[] = ["claude_code", "codex", "opencode", "gemini", "cursor", "qwen"].map(providerById);

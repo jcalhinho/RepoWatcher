@@ -170,7 +170,7 @@ export function App() {
           <SprintTrack events={events} liveEventIds={liveEventIds} />
 
           <section className="metrics-grid" aria-label="Indicateurs des sessions">
-            <Metric icon={<Activity size={16} />} label="Sessions observées" value={String(stats.sessions)} note="Claude Code + Codex + Gemini CLI + OpenCode + Cursor, données locales" tone="blue" />
+            <Metric icon={<Activity size={16} />} label="Sessions observées" value={String(stats.sessions)} note="Claude Code + Codex + Gemini CLI + OpenCode + Cursor + Qwen Code, données locales" tone="blue" />
             <Metric icon={<Gauge size={16} />} label="Tokens relevés" value={stats.hasTokenUsage ? `${formatCount(stats.inputTokens)} / ${formatCount(stats.outputTokens)}` : "— / —"} note="Input / output des événements chargés" tone="purple" />
             <Metric icon={<TerminalSquare size={16} />} label="Actions outil" value={String(stats.toolEvents)} note="Événements reçus" tone="amber" />
             <Metric icon={<FolderGit2 size={16} />} label="Fichiers observés" value={String(stats.files)} note={repoPath ? "Dans les sessions observées" : "Chemins fournis par les agents"} tone="green" />
@@ -184,7 +184,7 @@ export function App() {
             </div>
 
             <div className="panel connectors-panel">
-              <div className="panel-heading compact"><div><div className="panel-title-row"><h2>Connecteurs</h2><span className="count-badge">5 pris en charge</span></div><p>État d’observation par source locale</p></div><button className="tiny-icon" onClick={() => setWorkspaceDialog("connectors")} aria-label="Gérer les connecteurs"><Plus size={16} /></button></div>
+              <div className="panel-heading compact"><div><div className="panel-title-row"><h2>Connecteurs</h2><span className="count-badge">6 pris en charge</span></div><p>État d’observation par source locale</p></div><button className="tiny-icon" onClick={() => setWorkspaceDialog("connectors")} aria-label="Gérer les connecteurs"><Plus size={16} /></button></div>
               <div className="overview-connectors">{OVERVIEW_CONNECTORS.map((provider) => {
                 const count = stats.perProvider.get(provider.eventKey) || 0;
                 return <div className="overview-connector" key={provider.id}><ProviderMark provider={provider} small /><span className="connector-name">{provider.name}<small className="connector-scope">{count ? `${count} événements reçus` : "En attente d’événement"}</small></span><button className="connector-action" onClick={() => openConnectorSetup(provider.id)}>Configurer</button></div>;
@@ -200,7 +200,7 @@ export function App() {
           </section>
           {view === "sessions" && <WorkspaceModal titleId="history-title" title="Historique des sessions" className="history-dialog" onClose={() => setView("overview")}><SessionExplorer events={events} onConnect={connect} onClear={clearHistory} onLoadOlder={loadOlderHistory} hasMore={historyHasMore} loadingOlder={historyLoading} onExport={exportHistory} notice={historyNotice} repository={repoSnapshot} /></WorkspaceModal>}
           {view === "repo-map" && <WorkspaceModal titleId="repo-title" title="Carte du dépôt" onClose={() => setView("overview")}><p className="dialog-subtitle">{repoPath || "Sélectionne un dépôt Git local pour comparer son état avec les événements des agents."}</p>{repoSnapshot ? <RepositoryMap snapshot={repoSnapshot} events={events} /> : <div className="panel secondary-empty">La vue Git lit la branche, les modifications non commitées et les derniers commits.</div>}<button className="primary-button" onClick={selectRepository}><Plus size={16} /> {repoPath ? "Changer de dépôt" : "Sélectionner un dépôt"}</button></WorkspaceModal>}
-          <footer className="page-footer"><span><span className={`footer-led ${collectorState === "listening" ? "active" : collectorState === "preview" ? "preview" : ""}`} /> {collectorState === "listening" ? "Collecteur local actif" : collectorState === "preview" ? "Aperçu web — collecte inactive" : "Collecteur en démarrage"}</span><span>Agent Observer <b>·</b> Connecteurs Claude Code + Codex + Gemini CLI + OpenCode + Cursor</span><span>Événements chargés : {events.length}</span></footer>
+          <footer className="page-footer"><span><span className={`footer-led ${collectorState === "listening" ? "active" : collectorState === "preview" ? "preview" : ""}`} /> {collectorState === "listening" ? "Collecteur local actif" : collectorState === "preview" ? "Aperçu web — collecte inactive" : "Collecteur en démarrage"}</span><span>Agent Observer <b>·</b> Connecteurs Claude Code + Codex + Gemini CLI + OpenCode + Cursor + Qwen Code</span><span>Événements chargés : {events.length}</span></footer>
         </div>
       </main>
       {workspaceDialog && <WorkspaceDialog kind={workspaceDialog} search={search} onSearch={setSearch} onConfigure={openConnectorSetup} onShow={setWorkspaceDialog} onOpenHistory={() => { setWorkspaceDialog(null); setView("sessions"); }} onClose={() => setWorkspaceDialog(null)} />}
@@ -210,7 +210,7 @@ export function App() {
 }
 
 /** Overview panel order: provider table order, connectors only. */
-const OVERVIEW_CONNECTORS = ["claude_code", "codex", "cursor", "opencode", "gemini"].map(providerById);
+const OVERVIEW_CONNECTORS = ["claude_code", "codex", "cursor", "opencode", "gemini", "qwen"].map(providerById);
 
 function Metric({ icon, label, value, note, tone }: { icon: React.ReactNode; label: string; value: string; note: string; tone: string }) {
   return <div className="metric-card"><div className={`metric-icon ${tone}`}>{icon}</div><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="metric-note"><span className={`note-dot ${tone}`} />{note}</div><div className={`metric-glow ${tone}`} /></div>;

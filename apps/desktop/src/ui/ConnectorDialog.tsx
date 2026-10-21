@@ -8,7 +8,8 @@ type CodexSetup = CapturePolicy & { sessions_dir: string; available: boolean };
 type GeminiSetup = CapturePolicy & { sessions_dir: string; available: boolean };
 type OpenCodeSetup = CapturePolicy & { data_dir: string; database_paths: string[]; available: boolean };
 type CursorSetup = CapturePolicy & { endpoint: string; settings_fragment: string };
-type SetupByKind = { claude: ClaudeSetup; codex: CodexSetup; gemini: GeminiSetup; opencode: OpenCodeSetup; cursor: CursorSetup };
+type QwenSetup = CapturePolicy & { projects_dir: string; available: boolean };
+type SetupByKind = { claude: ClaudeSetup; codex: CodexSetup; gemini: GeminiSetup; opencode: OpenCodeSetup; cursor: CursorSetup; qwen: QwenSetup };
 
 export type ConnectorSetup = { [K in ConnectorKind]: { kind: K; setup: SetupByKind[K] } }[ConnectorKind];
 
@@ -17,7 +18,8 @@ const SETUP_COMMANDS: Record<ConnectorKind, string> = {
   codex: "codex_setup",
   gemini: "gemini_setup",
   opencode: "opencode_setup",
-  cursor: "cursor_setup"
+  cursor: "cursor_setup",
+  qwen: "qwen_setup"
 };
 
 export async function loadConnectorSetup(kind: ConnectorKind): Promise<ConnectorSetup> {
@@ -77,7 +79,8 @@ export function ConnectorSetupDialog({ connector, onClose }: { connector: Connec
     }
     case "codex":
     case "gemini":
-    case "opencode": {
+    case "opencode":
+    case "qwen": {
       const source = localSourceCopy(connector);
       return <ConnectorDialog id={connector.kind} eyebrow={source.eyebrow} title={source.title} onClose={onClose}>
         <p>{source.description}</p>
@@ -90,7 +93,7 @@ export function ConnectorSetupDialog({ connector, onClose }: { connector: Connec
 }
 
 /** Copy of the read-only connectors that tail local journals or databases. */
-function localSourceCopy(connector: Extract<ConnectorSetup, { kind: "codex" | "gemini" | "opencode" }>) {
+function localSourceCopy(connector: Extract<ConnectorSetup, { kind: "codex" | "gemini" | "opencode" | "qwen" }>) {
   switch (connector.kind) {
     case "codex": return {
       eyebrow: "CONNECTEUR LOCAL · JOURNAUX NATIFS",
@@ -111,6 +114,16 @@ function localSourceCopy(connector: Extract<ConnectorSetup, { kind: "codex" | "g
       sourcePath: connector.setup.sessions_dir,
       retention: "Les sorties d’outils, réponses assistant et pensées ne sont jamais conservées. Seuls les champs opérationnels nécessaires à la timeline sont extraits.",
       note: "Gemini CLI stocke séparément des fichiers par projet. Le SHA-256 du chemin du projet sert à rapprocher ces événements du dépôt sélectionné sans révéler ni transmettre ce chemin à Gemini."
+    };
+    case "qwen": return {
+      eyebrow: "CONNECTEUR LOCAL · JOURNAUX NATIFS",
+      title: "Qwen Code est observé localement",
+      description: "RepoWatcher suit les journaux de conversation Qwen Code de chaque projet ; aucun réglage Qwen n’est modifié. Les nouveaux enregistrements sont lus à mesure qu’ils sont écrits. L’historique antérieur au démarrage de RepoWatcher n’est pas importé.",
+      sourceLabel: "Source locale",
+      sourceState: connector.setup.available ? "Dossier Qwen Code détecté" : "Dossier Qwen Code absent pour l’instant",
+      sourcePath: connector.setup.projects_dir,
+      retention: "Les réponses assistant, pensées, sorties d’outils et textes de réponse API ne sont jamais conservés. Seuls les champs opérationnels nécessaires à la timeline sont extraits.",
+      note: "Qwen Code enregistre les compteurs input/output et la durée de chaque requête au modèle, ainsi que le résultat de chaque tour. Ces valeurs sont reprises telles quelles, sans estimation."
     };
     case "opencode": return {
       eyebrow: "CONNECTEUR LOCAL · SQLITE EN LECTURE SEULE",

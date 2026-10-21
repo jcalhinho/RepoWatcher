@@ -28,10 +28,11 @@ pub enum Provider {
     RooCode,
     Continue,
     Aider,
+    QwenCode,
 }
 
 impl Provider {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::ClaudeCode,
         Self::Codex,
         Self::Cursor,
@@ -42,6 +43,7 @@ impl Provider {
         Self::RooCode,
         Self::Continue,
         Self::Aider,
+        Self::QwenCode,
     ];
 
     pub const fn key(self) -> &'static str {
@@ -56,6 +58,7 @@ impl Provider {
             Self::RooCode => "roo_code",
             Self::Continue => "continue",
             Self::Aider => "aider",
+            Self::QwenCode => "qwen_code",
         }
     }
 }

@@ -3,6 +3,7 @@
 mod codex_rollout;
 mod gemini_sessions;
 mod opencode_sessions;
+mod qwen_sessions;
 
 use axum::{
     Router,
@@ -59,6 +60,14 @@ struct CodexSetup {
 #[derive(Serialize)]
 struct GeminiSetup {
     sessions_dir: String,
+    available: bool,
+    capture_prompts: bool,
+    capture_commands: bool,
+}
+
+#[derive(Serialize)]
+struct QwenSetup {
+    projects_dir: String,
     available: bool,
     capture_prompts: bool,
     capture_commands: bool,
@@ -157,6 +166,17 @@ fn gemini_setup(state: tauri::State<'_, CollectorState>) -> GeminiSetup {
     GeminiSetup {
         sessions_dir: sessions_dir.display().to_string(),
         available: sessions_dir.is_dir(),
+        capture_prompts: state.capture_prompts.load(Ordering::Relaxed),
+        capture_commands: state.capture_commands.load(Ordering::Relaxed),
+    }
+}
+
+#[tauri::command]
+fn qwen_setup(state: tauri::State<'_, CollectorState>) -> QwenSetup {
+    let projects_dir = qwen_sessions::projects_root();
+    QwenSetup {
+        projects_dir: projects_dir.display().to_string(),
+        available: projects_dir.is_dir(),
         capture_prompts: state.capture_prompts.load(Ordering::Relaxed),
         capture_commands: state.capture_commands.load(Ordering::Relaxed),
     }
@@ -763,6 +783,15 @@ fn main() {
                     persist_event(&gemini_state, event);
                 },
             );
+            let qwen_state = state.clone();
+            qwen_sessions::spawn(
+                qwen_sessions::projects_root(),
+                state.capture_prompts.clone(),
+                state.capture_commands.clone(),
+                move |event| {
+                    persist_event(&qwen_state, event);
+                },
+            );
             let opencode_state = state.clone();
             opencode_sessions::spawn(
                 state.capture_prompts.clone(),
@@ -774,7 +803,7 @@ fn main() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, cursor_setup, load_session_events, export_session_history, repository_snapshot, commits_in_window, collector_status, update_capture_policy, clear_session_history])
+        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, export_session_history, repository_snapshot, commits_in_window, collector_status, update_capture_policy, clear_session_history])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }

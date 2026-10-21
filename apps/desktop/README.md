@@ -35,13 +35,13 @@ distribution.
 
 ## Current implementation boundary
 
-The app currently supports five local connectors: Claude Code through its
-documented HTTP hooks, Codex and Gemini CLI through their local session logs,
-OpenCode through its local SQLite database in read-only mode, and Cursor through
-its documented user hooks. These are five implemented integrations, not
+The app currently supports six local connectors: Claude Code through its
+documented HTTP hooks, Codex, Gemini CLI and Qwen Code through their local
+session logs, OpenCode through its local SQLite database in read-only mode, and
+Cursor through its documented user hooks. These are six implemented integrations, not
 universal coverage of every coding agent; GitHub Copilot, Cline, Roo Code,
 Continue, and Aider are not connected. Claude Code and Cursor hook setup is
-shown in-app; Codex and Gemini are detected without editing their settings.
+shown in-app; Codex, Gemini and Qwen Code are detected without editing their settings.
 The app listens only on `127.0.0.1:43821`, authenticates requests with a
 generated local bearer token, and exposes a settings fragment for the user to
 merge manually into Claude Code's user settings (`~/.claude/settings.json`, or
@@ -91,6 +91,17 @@ file-path metadata, and provider-reported `last_token_usage` input/output
 counts. Command text and user prompt text are separately opt-in. Tool outputs,
 assistant responses, and reasoning are never persisted. Codex counters describe
 the provider's last model request, not an inferred monetary cost.
+
+Qwen Code is supported by following appended JSONL chat records under
+`%USERPROFILE%\\.qwen\\projects\\<project>\\chats` (or
+`$HOME/.qwen/projects/<project>/chats`). No Qwen settings are edited. At
+startup, the monitor seeks to the end of chats active in the last 48 hours and
+observes new records only; it does not import prior history. It records session
+start, user prompts (text opt-in), tool start/finish/failure with tool names and
+file paths (command text opt-in), turn results with their duration, and the
+provider-reported input/output token counts, model and latency of each API
+response. Assistant text, thoughts, tool outputs and API response text are never
+persisted.
 
 Gemini CLI is observed from local chat records under
 `%USERPROFILE%\.gemini\tmp` (or `$HOME/.gemini/tmp`; `GEMINI_CLI_HOME` is
