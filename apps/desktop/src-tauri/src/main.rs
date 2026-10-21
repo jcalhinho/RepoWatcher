@@ -269,6 +269,50 @@ fn update_capture_policy(
     Ok(())
 }
 
+const SCHEMA: &str = "PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON; CREATE TABLE IF NOT EXISTS session_events (event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, occurred_at TEXT NOT NULL, provider TEXT NOT NULL, kind TEXT NOT NULL, project_path TEXT, payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_session_events_time ON session_events(occurred_at); CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value INTEGER NOT NULL);";
+
+/// Days events are kept; 0 keeps everything.
+const DEFAULT_RETENTION_DAYS: i64 = 30;
+const PURGE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+fn retention_days(connection: &Connection) -> i64 {
+    connection
+        .query_row("SELECT value FROM preferences WHERE key='retention_days'", [], |row| row.get::<_, i64>(0))
+        .optional()
+        .ok()
+        .flatten()
+        .unwrap_or(DEFAULT_RETENTION_DAYS)
+}
+
+/// Deletes events older than `days` (none when `days` is 0) and returns how many were removed.
+fn purge_expired_events(connection: &Connection, days: i64) -> rusqlite::Result<usize> {
+    if days <= 0 {
+        return Ok(0);
+    }
+    // Same RFC 3339 shape as the stored `occurred_at`, so text comparison orders correctly.
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
+    connection.execute("DELETE FROM session_events WHERE occurred_at < ?1", [cutoff])
+}
+
+#[tauri::command]
+fn retention_policy(state: tauri::State<'_, CollectorState>) -> Result<i64, String> {
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    Ok(retention_days(&database))
+}
+
+/// Saves the retention period and applies it at once; returns the number of events removed.
+#[tauri::command]
+fn update_retention_policy(state: tauri::State<'_, CollectorState>, days: i64) -> Result<usize, String> {
+    if !(0..=3650).contains(&days) {
+        return Err("Durée de conservation invalide.".into());
+    }
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    database
+        .execute("INSERT INTO preferences(key, value) VALUES ('retention_days', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [days])
+        .map_err(|error| error.to_string())?;
+    purge_expired_events(&database, days).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn clear_session_history(state: tauri::State<'_, CollectorState>) -> Result<(), String> {
     let database = state.database.lock().map_err(|error| error.to_string())?;
@@ -795,6 +839,15 @@ fn normalize_claude_event(
 
 fn main() {
     tauri::Builder::default()
+        // Must be registered first. A second launch would lose the collector port and
+        // silently observe nothing: bring the running window forward instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
@@ -808,7 +861,9 @@ fn main() {
             let data_dir = app.path().app_local_data_dir()?;
             fs::create_dir_all(&data_dir)?;
             let connection = Connection::open(data_dir.join("observer.sqlite3"))?;
-            connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON; CREATE TABLE IF NOT EXISTS session_events (event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, occurred_at TEXT NOT NULL, provider TEXT NOT NULL, kind TEXT NOT NULL, project_path TEXT, payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_session_events_time ON session_events(occurred_at); CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value INTEGER NOT NULL);")?;
+            connection.execute_batch(SCHEMA)?;
+            // Old events go first, before anything reads the database.
+            let _ = purge_expired_events(&connection, retention_days(&connection));
             let preference = |key: &str| -> bool {
                 connection.query_row("SELECT value FROM preferences WHERE key=?1", [key], |row| row.get::<_, i64>(0)).optional().ok().flatten().unwrap_or(0) != 0
             };
@@ -881,10 +936,17 @@ fn main() {
                     persist_event(&opencode_state, event);
                 },
             );
+            let purge_database = state.database.clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(PURGE_INTERVAL);
+                if let Ok(database) = purge_database.lock() {
+                    let _ = purge_expired_events(&database, retention_days(&database));
+                }
+            });
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, load_analytics_events, export_session_history, repository_snapshot, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, clear_session_history])
+        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, load_analytics_events, export_session_history, repository_snapshot, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, retention_policy, update_retention_policy, clear_session_history])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }
@@ -892,6 +954,21 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn purges_only_events_older_than_the_retention_period() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(SCHEMA).unwrap();
+        assert_eq!(retention_days(&connection), DEFAULT_RETENTION_DAYS);
+        for (id, age_days) in [("old", 40), ("recent", 2)] {
+            let at = (chrono::Utc::now() - chrono::Duration::days(age_days)).to_rfc3339();
+            connection.execute("INSERT INTO session_events VALUES (?1, 's', ?2, 'codex', 'Checkpoint', NULL, '{}')", params![id, at]).unwrap();
+        }
+        assert_eq!(purge_expired_events(&connection, 0).unwrap(), 0);
+        assert_eq!(purge_expired_events(&connection, 30).unwrap(), 1);
+        let left: String = connection.query_row("SELECT event_id FROM session_events", [], |row| row.get(0)).unwrap();
+        assert_eq!(left, "recent");
+    }
 
     #[test]
     fn cursor_tool_and_file_events_exclude_outputs_and_gate_commands() {

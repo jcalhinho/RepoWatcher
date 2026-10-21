@@ -14,7 +14,8 @@
     "lint": "npm run --workspaces lint",
     "desktop:dev": "npm run tauri --workspace @repo-watcher/agent-observer-desktop dev",
     "desktop:typecheck": "npm run typecheck --workspace @repo-watcher/agent-observer-desktop",
-    "desktop:build": "npm run tauri --workspace @repo-watcher/agent-observer-desktop build"
+    "desktop:build": "npm run tauri --workspace @repo-watcher/agent-observer-desktop build",
+    "desktop:install-mac": "bash apps/desktop/scripts/install-mac.sh"
   },
   "devDependencies": {
     "@types/node": "^22.14.1",

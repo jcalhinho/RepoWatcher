@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState, type ReactNode } from "react";
 import { Search, ShieldCheck } from "lucide-react";
 import { ProviderCard } from "./ProviderBadges";
 import { activeProviders } from "./providers";
@@ -16,7 +17,36 @@ export function WorkspaceDialog({ kind, search, onSearch, onConfigure, onShow, o
     return <WorkspaceModal titleId="workspace-dialog-title" title="Connecteurs" onClose={onClose}><p className="dialog-subtitle">Configure les sources locales et leurs préférences de confidentialité.</p><div className="connector-search"><Search size={14} /><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Filtrer les connecteurs" aria-label="Filtrer les connecteurs" /></div><div className="connector-list dialog-connectors">{filteredProviders.map((provider) => <ProviderCard key={provider.id} provider={provider} active={Boolean(provider.connector)} onClick={() => onConfigure(provider.id)} label={provider.connector?.scope} />)}</div><div className="connectors-footer">Claude Code, Codex, Gemini CLI, OpenCode et Qwen Code sont pris en charge localement. Les réglages de confidentialité se règlent dans chaque configuration.</div></WorkspaceModal>;
   }
   if (kind === "preferences") {
-    return <WorkspaceModal titleId="workspace-dialog-title" title="Préférences et confidentialité" onClose={onClose}><p>Les événements sont conservés localement. Les prompts et commandes restent désactivés par défaut. Choisis un connecteur pour consulter ou modifier ses options de capture.</p><div className="privacy-card"><div className="privacy-icon"><ShieldCheck size={15} /></div><div><b>Données locales</b><span>Rien n’est envoyé au cloud</span></div><span className="privacy-dot" /></div><button className="primary-button" onClick={() => onShow("connectors")}>Ouvrir les connecteurs</button></WorkspaceModal>;
+    return <WorkspaceModal titleId="workspace-dialog-title" title="Préférences et confidentialité" onClose={onClose}><p>Les événements sont conservés localement. Les prompts et commandes restent désactivés par défaut. Choisis un connecteur pour consulter ou modifier ses options de capture.</p><div className="privacy-card"><div className="privacy-icon"><ShieldCheck size={15} /></div><div><b>Données locales</b><span>Rien n’est envoyé au cloud</span></div><span className="privacy-dot" /></div><RetentionSetting /><button className="primary-button" onClick={() => onShow("connectors")}>Ouvrir les connecteurs</button></WorkspaceModal>;
   }
   return <WorkspaceModal titleId="workspace-dialog-title" title="Aide" onClose={onClose}><p>Agent Observer affiche l’activité exposée localement, l’état Git du dépôt choisi et les métriques observées. Les changements Git ne sont pas attribués à un agent sans preuve.</p><p>Les bulles résument les événements connus et ne montrent jamais les journaux bruts. Ouvre l’historique pour parcourir les détails d’une session.</p><button className="primary-button" onClick={onOpenHistory}>Ouvrir l’historique</button></WorkspaceModal>;
+}
+
+const RETENTION_OPTIONS: Array<[number, string]> = [[7, "7 jours"], [30, "30 jours"], [90, "90 jours"], [365, "1 an"], [0, "Tout garder"]];
+
+/** How long events stay in the local database; older ones are purged at startup and every hour. */
+function RetentionSetting() {
+  const [days, setDays] = useState<number | null>(null);
+  const [notice, setNotice] = useState("");
+  useEffect(() => {
+    invoke<number>("retention_policy").then(setDays).catch(() => setNotice("Réglage indisponible dans l’aperçu web."));
+  }, []);
+  async function choose(next: number) {
+    if (next > 0 && days !== null && (days === 0 || next < days) && !window.confirm(`Supprimer dès maintenant les événements de plus de ${next} jours ? Cette action ne peut pas être annulée.`)) return;
+    try {
+      const removed = await invoke<number>("update_retention_policy", { days: next });
+      setDays(next);
+      setNotice(removed ? `${removed.toLocaleString("fr-FR")} événements anciens supprimés.` : "Réglage enregistré.");
+    } catch (error) {
+      setNotice(String(error));
+    }
+  }
+  return <div className="retention-setting">
+    <label htmlFor="retention-days"><b>Conservation des événements</b><span>Les événements plus anciens sont supprimés au démarrage et toutes les heures.</span></label>
+    <select id="retention-days" value={days ?? ""} disabled={days === null} onChange={(event) => void choose(Number(event.target.value))}>
+      {days === null && <option value="">…</option>}
+      {RETENTION_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+    </select>
+    {notice && <small>{notice}</small>}
+  </div>;
 }
