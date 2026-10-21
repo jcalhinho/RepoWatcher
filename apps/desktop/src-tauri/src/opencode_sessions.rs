@@ -409,6 +409,7 @@ fn make_event(
     event
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_tool_event(
     path: &Path,
     session_id: &str,

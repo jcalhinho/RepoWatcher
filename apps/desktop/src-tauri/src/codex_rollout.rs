@@ -366,7 +366,7 @@ fn project_record(
                     .get("output_tokens")
                     .and_then(Value::as_u64)
                     .map(provider_value);
-                event.model = context.model.as_ref().map(provider_string);
+                event.model = context.model.as_deref().map(provider_string);
                 (event.input_tokens.is_some() || event.output_tokens.is_some()).then_some(event)
             }
             "item_completed" => project_completed_item(payload, context, timestamp),
@@ -470,7 +470,7 @@ fn project_completed_item(
 fn event(context: &SessionContext, kind: EventKind) -> SessionEvent {
     let mut event = SessionEvent::new(&context.id, Provider::Codex, kind);
     event.project_path = context.project_path.clone();
-    event.model = context.model.as_ref().map(provider_string);
+    event.model = context.model.as_deref().map(provider_string);
     event
 }
 
@@ -481,9 +481,9 @@ fn provider_value(value: u64) -> Sourced<u64> {
     }
 }
 
-fn provider_string(value: &String) -> Sourced<String> {
+fn provider_string(value: &str) -> Sourced<String> {
     Sourced {
-        value: value.clone(),
+        value: value.to_owned(),
         origin: DataOrigin::Provider,
     }
 }
