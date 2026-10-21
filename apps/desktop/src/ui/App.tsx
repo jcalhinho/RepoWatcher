@@ -4,10 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   Activity, Bot, ChevronDown, CircleHelp,
-  FolderGit2, GitBranch, Gauge, Plus,
+  FolderGit2, GitBranch, Plus,
   Settings2, Sparkles, TerminalSquare
 } from "lucide-react";
-import { ActivityChart } from "./ActivityChart";
+import { SessionAnalytics } from "./SessionAnalytics";
 import { ConnectorSetupDialog, loadConnectorSetup, type ConnectorSetup } from "./ConnectorDialog";
 import { EventFeed } from "./EventFeed";
 import { ProviderMark } from "./ProviderBadges";
@@ -169,17 +169,11 @@ export function App() {
           <section>
           <SprintTrack events={events} liveEventIds={liveEventIds} />
 
-          <section className="metrics-grid" aria-label="Indicateurs des sessions">
-            <Metric icon={<Activity size={16} />} label="Sessions observées" value={String(stats.sessions)} note="Claude Code + Codex + Gemini CLI + OpenCode + Cursor + Qwen Code, données locales" tone="blue" />
-            <Metric icon={<Gauge size={16} />} label="Tokens relevés" value={stats.hasTokenUsage ? `${formatCount(stats.inputTokens)} / ${formatCount(stats.outputTokens)}` : "— / —"} note="Input / output des événements chargés" tone="purple" />
-            <Metric icon={<TerminalSquare size={16} />} label="Actions outil" value={String(stats.toolEvents)} note="Événements reçus" tone="amber" />
-            <Metric icon={<FolderGit2 size={16} />} label="Fichiers observés" value={String(stats.files)} note={repoPath ? "Dans les sessions observées" : "Chemins fournis par les agents"} tone="green" />
-          </section>
+          <SessionAnalytics events={events} />
 
           <section className="content-grid">
             <div className="panel session-panel">
               <div className="panel-heading"><div><div className="panel-title-row"><h2>Activité récente</h2><span className="live-indicator"><span /> {events.length ? "FLUX AGENTS CONNECTÉS" : "EN ATTENTE DU PREMIER ÉVÉNEMENT"}</span></div><p>Événements réels reçus localement ; texte sensible non conservé par défaut.</p></div></div>
-              {events.length > 0 && <ActivityChart events={events} />}
               {events.length ? <EventFeed events={events} /> : <div className="empty-sessions"><div className="empty-illustration"><div className="orbit orbit-a" /><div className="orbit orbit-b" /><div className="empty-core"><Bot size={23} /></div><span className="orbit-dot dot-one" /><span className="orbit-dot dot-two" /><span className="orbit-dot dot-three" /></div><h3>Le collecteur local est prêt</h3><p>Configure Claude Code pour les outils en direct, ou Codex pour un événement à chaque fin de tour.<br />Les prompts et commandes sont désactivés par défaut.</p><button className="outline-button" onClick={() => connect("claude")}><TerminalSquare size={15} /> Configurer Claude Code</button></div>}
             </div>
 
@@ -212,6 +206,3 @@ export function App() {
 /** Overview panel order: provider table order, connectors only. */
 const OVERVIEW_CONNECTORS = ["claude_code", "codex", "cursor", "opencode", "gemini", "qwen"].map(providerById);
 
-function Metric({ icon, label, value, note, tone }: { icon: React.ReactNode; label: string; value: string; note: string; tone: string }) {
-  return <div className="metric-card"><div className={`metric-icon ${tone}`}>{icon}</div><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="metric-note"><span className={`note-dot ${tone}`} />{note}</div><div className={`metric-glow ${tone}`} /></div>;
-}

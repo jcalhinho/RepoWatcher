@@ -1,5 +1,9 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { narrateEvent } from "./activity-copy";
+import { providers } from "./providers";
 import type { SessionEvent } from "./types";
+
+const providerNames = new Map(providers.map((provider) => [provider.eventKey, provider]));
 
 const PAGE_SIZE = 50;
 
@@ -25,7 +29,9 @@ export const EventFeed = memo(function EventFeed({ events }: { events: SessionEv
 });
 
 const EventRow = memo(function EventRow({ event }: { event: SessionEvent }) {
-  return <div className="event-row"><time>{new Date(event.occurred_at).toLocaleTimeString()}</time><span className="event-kind">{event.provider} · {event.kind.replaceAll("_", " ")}</span><span className="event-detail">{event.command || event.content || event.tool_name || event.file_path || event.project_path || event.session_id}</span><EventPayload event={event} /></div>;
+  const provider = providerNames.get(event.provider);
+  const narration = narrateEvent(event);
+  return <div className={`event-row ${narration?.tone ?? ""}`}><time>{new Date(event.occurred_at).toLocaleTimeString()}</time><span className="event-kind"><i style={{ background: provider?.color }} />{provider?.name ?? event.provider}</span><span className="event-detail">{narration ? <>{narration.text}{narration.detail && <small>{narration.detail}</small>}</> : event.kind.replaceAll("_", " ")}</span><EventPayload event={event} /></div>;
 });
 
 export function EventPayload({ event }: { event: SessionEvent }) {

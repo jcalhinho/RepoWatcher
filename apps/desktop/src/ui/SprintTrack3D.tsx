@@ -1,6 +1,7 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import type { Narration } from "./activity-copy";
 import type { RaceStatus } from "./race";
 
 export type RaceLane = {
@@ -12,7 +13,8 @@ export type RaceLane = {
   cue: "leap" | "fall" | "finish";
   /** Event id of the latest event when it just arrived live; drives one-shot animations. */
   cueKey: string | null;
-  activity?: string | null;
+  /** What the agent is doing now, shown in a speech bubble above its runner. */
+  bubble?: Narration | null;
 };
 
 const START_X = -9;
@@ -56,6 +58,7 @@ function Low({ color, emissive }: { color: string; emissive?: string }) {
 
 export default function SprintTrack3D({ lanes, reducedMotion }: { lanes: RaceLane[]; reducedMotion: boolean }) {
   const active = lanes.filter((lane) => lane.status === "running" || lane.status === "recent");
+  const bubbleRows = assignBubbleRows(lanes);
   const leaderX = active.length ? progressToX(Math.max(...active.map((lane) => lane.progress))) : 0;
   return (
     <Canvas
@@ -83,16 +86,36 @@ export default function SprintTrack3D({ lanes, reducedMotion }: { lanes: RaceLan
       />
       <Stadium lanes={lanes} excitement={active.length} reducedMotion={reducedMotion} />
       {lanes.map((lane, index) => (
-        <Runner key={lane.id} lane={lane} z={laneZ(index, lanes.length)} reducedMotion={reducedMotion} />
+        <Runner key={lane.id} lane={lane} z={laneZ(index, lanes.length)} bubbleRow={bubbleRows.get(lane.id) ?? 0} renderOrder={index} reducedMotion={reducedMotion} />
       ))}
     </Canvas>
   );
 }
 
+/**
+ * Bubble rows: a bubble goes to the lowest row with no other bubble overlapping it along the track.
+ * Nearest lanes are placed first, so farther lanes (already higher on screen) take the upper rows.
+ */
+function assignBubbleRows(lanes: RaceLane[]) {
+  const placed: Array<{ center: number; row: number }> = [];
+  const rows = new Map<string, number>();
+  for (const lane of [...lanes].reverse().filter((candidate) => candidate.bubble)) {
+    const center = lane.progress + (bubbleFlipped(lane.progress) ? -9 : 9);
+    let row = 0;
+    while (row < 2 && placed.some((other) => other.row === row && Math.abs(other.center - center) < 32)) row += 1;
+    placed.push({ center, row });
+    rows.set(lane.id, row);
+  }
+  return rows;
+}
+
+/** Near the finish the bubble opens to the left of the runner so it stays inside the stage. */
+const bubbleFlipped = (progress: number) => progress > 60;
+
 function CameraRig({ leaderX, reducedMotion }: { leaderX: number; reducedMotion: boolean }) {
   const { camera, size } = useThree();
   const target = useRef(new THREE.Vector3());
-  const look = useRef(new THREE.Vector3(0, 0.9, -0.5));
+  const look = useRef(new THREE.Vector3(0, 1.35, -0.5));
   useFrame((state, delta) => {
     const perspective = camera as THREE.PerspectiveCamera;
     const aspect = size.width / Math.max(1, size.height);
@@ -317,7 +340,7 @@ function Clouds({ reducedMotion }: { reducedMotion: boolean }) {
 
 type Action = { type: RaceLane["cue"]; startedAt: number };
 
-function Runner({ lane, z, reducedMotion }: { lane: RaceLane; z: number; reducedMotion: boolean }) {
+function Runner({ lane, z, bubbleRow, renderOrder, reducedMotion }: { lane: RaceLane; z: number; bubbleRow: number; renderOrder: number; reducedMotion: boolean }) {
   const root = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const leftArm = useRef<THREE.Group>(null);
@@ -418,7 +441,7 @@ function Runner({ lane, z, reducedMotion }: { lane: RaceLane; z: number; reduced
   return (
     <>
       <group ref={root} position={[motion.current.x, 0, z]} scale={RUNNER_SCALE}>
-        {lane.activity && <SpeechBubble text={lane.activity} color={lane.color} />}
+        {lane.bubble && <SpeechBubble narration={lane.bubble} color={lane.color} row={bubbleRow} flipped={bubbleFlipped(lane.progress)} renderOrder={renderOrder} />}
         {[-1, 1].map((side) => (
           <group key={side} ref={side < 0 ? leftLeg : rightLeg} position={[0, HIP_HEIGHT, side * 0.09]}>
             <mesh position={[0, -0.1, 0]}>
@@ -482,37 +505,89 @@ function Runner({ lane, z, reducedMotion }: { lane: RaceLane; z: number; reduced
   );
 }
 
-function SpeechBubble({ text, color }: { text: string; color: string }) {
+const BUBBLE_TONES: Record<Narration["tone"], string> = { work: "#3f4b5e", success: "#0b7a0b", failure: "#c02f2f", info: "#3f4b5e" };
+
+/** Two-line speech bubble: what the agent does (wrapped on up to two lines) and the reported detail. */
+function SpeechBubble({ narration, color, row, flipped, renderOrder }: { narration: Narration; color: string; row: number; flipped: boolean; renderOrder: number }) {
   const texture = useMemo(() => {
     const canvas = document.createElement("canvas");
-    canvas.width = 512;
-    canvas.height = 128;
+    canvas.width = 1024;
+    canvas.height = 300;
     const context = canvas.getContext("2d");
     if (context) {
       context.fillStyle = "rgba(255,255,255,0.97)";
       context.strokeStyle = color;
-      context.lineWidth = 8;
+      context.lineWidth = 10;
       context.beginPath();
-      context.roundRect(8, 8, 496, 108, 24);
+      context.roundRect(10, 10, 1004, 236, 36);
       context.fill();
       context.stroke();
-      context.fillStyle = "#202a35";
-      context.font = "600 30px system-ui, sans-serif";
-      context.textAlign = "center";
+      // Tail pointing down to the runner's head.
+      const tail = flipped ? (x: number) => 1024 - x : (x: number) => x;
+      context.beginPath();
+      context.moveTo(tail(70), 241);
+      context.lineTo(tail(52), 292);
+      context.lineTo(tail(130), 241);
+      context.closePath();
+      context.fill();
+      context.beginPath();
+      context.moveTo(tail(70), 246);
+      context.lineTo(tail(52), 292);
+      context.lineTo(tail(130), 246);
+      context.stroke();
+      context.fillStyle = BUBBLE_TONES[narration.tone];
+      context.font = "700 58px system-ui, sans-serif";
       context.textBaseline = "middle";
-      let label = text;
-      while (context.measureText(label).width > 450 && label.length > 12) label = `${label.slice(0, -4)}…`;
-      context.fillText(label, 256, 62);
+      const lines = wrap(context, narration.text, 940, narration.detail ? 2 : 3);
+      const lineHeight = 66;
+      const detailHeight = narration.detail ? 56 : 0;
+      let y = 128 - ((lines.length - 1) * lineHeight + detailHeight) / 2;
+      for (const line of lines) {
+        context.fillText(line, 42, y);
+        y += lineHeight;
+      }
+      if (narration.detail) {
+        context.fillStyle = "#56627a";
+        context.font = "500 44px system-ui, sans-serif";
+        context.fillText(wrap(context, narration.detail, 940, 1)[0], 42, y - 8);
+      }
     }
     const result = new THREE.CanvasTexture(canvas);
     result.colorSpace = THREE.SRGBColorSpace;
+    result.anisotropy = 4;
     result.needsUpdate = true;
     return result;
-  }, [text, color]);
+  }, [narration.text, narration.detail, narration.tone, color, flipped]);
   useEffect(() => () => texture.dispose(), [texture]);
-  return <sprite position={[0.55, 1.75, 0.08]} scale={[2.35, 0.59, 1]}>
+  return <sprite position={[flipped ? -1.4 : 1.4, 1.75 + row * 0.92, 0.08]} scale={[2.95, 0.86, 1]} renderOrder={10 + renderOrder}>
     <spriteMaterial map={texture} transparent depthTest={false} />
   </sprite>;
+}
+
+function wrap(context: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number) {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (context.measureText(candidate).width <= maxWidth || !current) current = candidate;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    let last = lines[maxLines - 1];
+    while (context.measureText(`${last}…`).width > maxWidth && last.length > 4) last = last.slice(0, -2);
+    lines[maxLines - 1] = `${last}…`;
+  }
+  return lines.map((line) => {
+    let fitted = line;
+    while (context.measureText(fitted).width > maxWidth && fitted.length > 4) fitted = `${fitted.slice(0, -2)}…`;
+    return fitted;
+  });
 }
 
 type MotionState = { confettiAt: number; velocities: THREE.Vector3[] };
