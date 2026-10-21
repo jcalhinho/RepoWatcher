@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 export type ConnectorKind = "claude" | "codex" | "gemini" | "opencode" | "qwen";
 
 export type Provider = {
@@ -15,7 +17,7 @@ export type Provider = {
 
 /**
  * Agent colours with a local connector come from the validated categorical palette (dark steps,
- * checked for colour-blind separation in `chartProviders` order). Keep them in sync when adding one.
+ * checked for colour-blind separation in `activeProviders` order). Keep them in sync when adding one.
  * Single source of truth for providers: always read `eventKey` to match events, never `id`.
  */
 export const providers: Provider[] = [
@@ -29,7 +31,9 @@ export const providers: Provider[] = [
   { id: "cline", eventKey: "cline", name: "Cline", initials: "C", color: "#efb477", surface: "#3c3023" },
   { id: "roo", eventKey: "roo_code", name: "Roo Code", initials: "R", color: "#80c99c", surface: "#24382c" },
   { id: "continue", eventKey: "continue", name: "Continue", initials: "↳", color: "#c0c7d4", surface: "#30343c" },
-  { id: "aider", eventKey: "aider", name: "Aider", initials: "A", color: "#f18e8e", surface: "#402727" }
+  { id: "aider", eventKey: "aider", name: "Aider", initials: "A", color: "#f18e8e", surface: "#402727" },
+  // Placeholder for the backend key; each custom connector becomes its own provider at runtime.
+  { id: "custom", eventKey: "custom", name: "Connecteur personnalisé", initials: "+", color: "#7d8aa3", surface: "#262b35" }
 ];
 
 export function providerById(id: string): Provider {
@@ -44,12 +48,57 @@ export function providerById(id: string): Provider {
  * before reordering or adding one. Other providers stay in the table (backend keys) but are hidden.
  */
 export const activeProviders: Provider[] = ["claude_code", "gemini", "codex", "qwen", "opencode"].map(providerById);
-const ACTIVE_KEYS = new Set(activeProviders.map((provider) => provider.eventKey));
 
-export function isActiveProvider(eventKey: string) {
-  return ACTIVE_KEYS.has(eventKey);
+/*
+ * Custom connectors (open HTTP API) are providers too, keyed `custom:<connector id>`. They are kept
+ * in a small store so every view re-renders when one is added or removed.
+ */
+let customProviders: Provider[] = [];
+let agents: Provider[] = activeProviders;
+let version = 0;
+const listeners = new Set<() => void>();
+
+export type CustomConnectorInfo = { id: string; name: string; color: string };
+
+export function setCustomProviders(connectors: CustomConnectorInfo[]) {
+  customProviders = connectors.map((connector) => ({
+    id: `custom:${connector.id}`,
+    eventKey: `custom:${connector.id}`,
+    name: connector.name,
+    initials: connector.name.trim().charAt(0).toUpperCase() || "+",
+    color: connector.color,
+    surface: "#262b35"
+  }));
+  agents = customProviders.length ? [...activeProviders, ...customProviders] : activeProviders;
+  version += 1;
+  listeners.forEach((listener) => listener());
 }
 
-/** Lanes of the sprint track and series of the charts. */
-export const raceProviders = activeProviders;
-export const chartProviders = activeProviders;
+/** Every agent the app shows: the built-in ones, then custom connectors (chart and lane order). */
+export function activeAgents(): Provider[] {
+  return agents;
+}
+
+/** Re-renders the calling component when custom connectors change; returns the agents. */
+export function useAgents(): Provider[] {
+  useSyncExternalStore((listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => version);
+  return activeAgents();
+}
+
+export function providerFor(eventKey: string): Provider | undefined {
+  return eventKey.startsWith("custom:") ? customProviders.find((provider) => provider.eventKey === eventKey) : providers.find((provider) => provider.eventKey === eventKey);
+}
+
+export function agentName(eventKey: string) {
+  return providerFor(eventKey)?.name ?? eventKey;
+}
+
+/** Events worth showing. Custom keys always pass: connectors may load after the first events. */
+export function isActiveProvider(eventKey: string) {
+  return eventKey.startsWith("custom:") || activeProviders.some((provider) => provider.eventKey === eventKey);
+}
+
+/** Events of custom connectors are stored as provider `custom` + `agent`; the UI keys them `custom:<agent>`. */
+export function normalizeEvent<T extends { provider: string; agent?: string | null }>(event: T): T {
+  return event.provider === "custom" && event.agent ? { ...event, provider: `custom:${event.agent}` } : event;
+}

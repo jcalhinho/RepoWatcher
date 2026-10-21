@@ -2,13 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
-import { isActiveProvider } from "./providers";
+import { isActiveProvider, normalizeEvent } from "./providers";
 import { compareEventsNewestFirst, type SessionEvent } from "./types";
 
 const PAGE = 500;
 
 function merge(current: SessionEvent[], incoming: SessionEvent[]) {
-  const byId = new Map([...current, ...incoming.filter((event) => isActiveProvider(event.provider))].map((event) => [event.event_id, event]));
+  const byId = new Map([...current, ...incoming.map(normalizeEvent).filter((event) => isActiveProvider(event.provider))].map((event) => [event.event_id, event]));
   return [...byId.values()].sort(compareEventsNewestFirst);
 }
 
@@ -37,9 +37,10 @@ export function useObserver() {
       })
       .catch(() => undefined);
     listen<SessionEvent>("session-event", (event) => {
-      if (!isActiveProvider(event.payload.provider)) return;
-      setLiveEventIds((current) => ({ ...current, [event.payload.provider]: event.payload.event_id }));
-      setEvents((current) => merge(current, [event.payload]));
+      const payload = normalizeEvent(event.payload);
+      if (!isActiveProvider(payload.provider)) return;
+      setLiveEventIds((current) => ({ ...current, [payload.provider]: payload.event_id }));
+      setEvents((current) => merge(current, [payload]));
     }).then((stop) => { stopEvents = stop; });
     return () => { window.clearInterval(timer); stopEvents?.(); stopErrors?.(); };
   }, []);

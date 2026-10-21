@@ -490,3 +490,14 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 .alert-banner span { flex: 1; min-width: 0; }
 .mini-view .alert-banners { margin: 8px 8px 0; }
 @keyframes alert-in { from { transform: translateY(-4px); opacity: 0; } }
+
+/* ---------- Custom connectors ---------- */
+.custom-connector-form { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+.custom-connector-form input { flex: 1; min-width: 0; padding: 7px 11px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); }
+.custom-connector-list { display: grid; gap: var(--space-3); }
+.custom-connector { display: grid; justify-items: start; gap: 10px; padding: 14px var(--space-4); border: 1px solid var(--border); border-left: 3px solid var(--agent-color); border-radius: var(--radius); background: var(--surface); }
+.custom-connector header { display: flex; align-items: center; gap: 10px; width: 100%; }
+.custom-connector header b { font-size: 14.5px; }
+.custom-connector header .icon-button { margin-left: auto; }
+.custom-connector .facts { width: 100%; }
+.code-example { width: 100%; margin: 0; padding: 10px 12px; overflow: auto; border-radius: var(--radius-sm); background: #0b0d12; color: var(--text-2); font: 12px/1.5 var(--mono); }

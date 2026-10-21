@@ -4,7 +4,7 @@ import { STATUS_INFO } from "./AgentCard";
 import { deriveRaceState, isTurnComplete } from "./race";
 import type { RaceLane } from "./SprintTrack3D";
 import { oneOf, usePreference } from "./preferences";
-import { raceProviders } from "./providers";
+import { useAgents } from "./providers";
 import { ProviderMark } from "./ProviderBadges";
 import { Resizable } from "./Resizable";
 import type { SessionEvent } from "./types";
@@ -25,7 +25,8 @@ export function SprintTrack({ events, pulses, liveEventIds, onGoTo }: { events: 
   const now = useNow(1000);
   const [mode, setMode] = usePreference("race-mode", supportsWebGL() ? "3d" : "2d", isTrackMode);
   const reducedMotion = usePrefersReducedMotion();
-  const lanes = raceProviders.map((provider) => {
+  const agents = useAgents();
+  const lanes = agents.map((provider) => {
     const state = deriveRaceState(provider.eventKey, events, now);
     const pulse = pulses.get(provider.eventKey);
     const isLiveEvent = Boolean(state.latest && liveEventIds[provider.eventKey] === state.latest.event_id && now - Date.parse(state.latest.occurred_at) < 8_000);

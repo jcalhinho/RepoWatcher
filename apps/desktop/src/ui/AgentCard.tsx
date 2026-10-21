@@ -4,7 +4,7 @@ import type { AgentPulse, PulseStatus } from "./agentPulse";
 import { formatCompact, formatDuration } from "./analytics";
 import { InfoTip } from "./Explain";
 import { ProviderMark } from "./ProviderBadges";
-import { providers } from "./providers";
+import { providerFor, providers } from "./providers";
 
 /** The one vocabulary for agent states, used by the cards, the race and the help panel. */
 export const STATUS_INFO: Record<PulseStatus, { label: string; explanation: string }> = {
@@ -17,7 +17,7 @@ export const STATUS_INFO: Record<PulseStatus, { label: string; explanation: stri
   never: { label: "Pas encore vu", explanation: "Aucun événement reçu de cet agent. Vérifie son connecteur dans l’onglet Connecteurs." }
 };
 
-const providerByKey = new Map(providers.map((provider) => [provider.eventKey, provider]));
+const fallbackProvider = providers.find((provider) => provider.eventKey === "custom")!;
 
 export function since(at: number | null, now: number) {
   if (at === null) return "—";
@@ -43,7 +43,7 @@ function Metric({ label, value, explanation, tone, compact }: { label: string; v
  * `compact` drops the inline explanations for the mini window (tooltips stay).
  */
 export function AgentCard({ pulse, now, repository, compact = false, onGoTo }: { pulse: AgentPulse; now: number; repository: string | null; compact?: boolean; onGoTo?: (pulse: AgentPulse) => void }) {
-  const provider = providerByKey.get(pulse.key)!;
+  const provider = providerFor(pulse.key) ?? fallbackProvider;
   const status = STATUS_INFO[pulse.status];
   const session = pulse.session;
   const failRate = session && session.toolCalls ? Math.round((session.failures / session.toolCalls) * 100) : 0;

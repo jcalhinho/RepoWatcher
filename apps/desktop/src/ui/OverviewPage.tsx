@@ -6,7 +6,7 @@ import type { AnalyticsRange } from "./analytics";
 import { EventFeed } from "./EventFeed";
 import { EmptyState, SectionHeader } from "./Explain";
 import { isBoolean, usePreference } from "./preferences";
-import { activeProviders, providers } from "./providers";
+import { agentName, useAgents } from "./providers";
 import { Resizable } from "./Resizable";
 import { SessionAnalytics } from "./SessionAnalytics";
 import { SprintTrack } from "./SprintTrack";
@@ -14,8 +14,6 @@ import type { SessionEvent } from "./types";
 import type { AnalyticsDataset } from "./useAnalyticsEvents";
 import { useNow } from "./useNow";
 import type { WorkspaceRepository } from "./workspace";
-
-const providerNames = new Map(providers.map((provider) => [provider.eventKey, provider.name]));
 
 export type OverviewProps = {
   /** Last 24 hours in scope, for the agent cards. */
@@ -39,7 +37,8 @@ export type OverviewProps = {
 export function OverviewPage({ agentEvents, events, analyticsEvents, analytics, range, onRange, liveEventIds, repositoryOf, repositoryName, onGoTo, setup, onOpen }: OverviewProps) {
   // The cards and the race tick every second; only this page re-renders for it.
   const now = useNow(1000);
-  const pulses = useMemo(() => sortPulses(activeProviders.map((provider) => agentPulse(provider.eventKey, agentEvents, now))), [agentEvents, now]);
+  const agents = useAgents();
+  const pulses = useMemo(() => sortPulses(agents.map((provider) => agentPulse(provider.eventKey, agentEvents, now))), [agents, agentEvents, now]);
   const seen = pulses.filter((pulse) => pulse.status !== "never");
   const attention = pulses.filter((pulse) => pulse.status === "looping" || pulse.status === "blocked" || pulse.status === "stalled" || pulse.status === "waiting");
   const pulseByKey = new Map(pulses.map((pulse) => [pulse.key, pulse]));
@@ -56,7 +55,7 @@ export function OverviewPage({ agentEvents, events, analyticsEvents, analytics, 
       {seen.length
         ? <div className="agent-grid">{seen.map((pulse) => <AgentCard key={pulse.key} pulse={pulse} now={now} repository={repositoryName(pulse)} onGoTo={onGoTo} />)}</div>
         : <EmptyState title="En attente d’un agent" action={<button className="button" onClick={() => onOpen("connectors")}>Voir les connecteurs</button>}>Lance une session avec Claude Code, Codex, Gemini CLI, OpenCode ou Qwen Code : sa carte apparaîtra ici en quelques secondes.</EmptyState>}
-      {seen.length > 0 && seen.length < pulses.length && <p className="text-muted small">Pas encore vus : {pulses.filter((pulse) => pulse.status === "never").map((pulse) => providerNames.get(pulse.key) ?? pulse.key).join(", ")}.</p>}
+      {seen.length > 0 && seen.length < pulses.length && <p className="text-muted small">Pas encore vus : {pulses.filter((pulse) => pulse.status === "never").map((pulse) => agentName(pulse.key)).join(", ")}.</p>}
     </section>
 
     <section className="page-section" aria-labelledby="race-title">

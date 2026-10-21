@@ -3,12 +3,11 @@ import { since } from "./AgentCard";
 import { EventRow } from "./EventFeed";
 import { EmptyState, SectionHeader } from "./Explain";
 import { ProviderMark } from "./ProviderBadges";
-import { providers } from "./providers";
+import { providerFor } from "./providers";
 import { SessionSummaryPanel } from "./SessionSummaryPanel";
 import { sessionKey, type SessionEvent } from "./types";
 import type { WorkspaceRepository } from "./workspace";
 
-const providerByKey = new Map(providers.map((provider) => [provider.eventKey, provider]));
 
 /** Every observed session, newest first, with its summary and full timeline. */
 export function SessionsPage({ events, hasMore, loadingOlder, onLoadOlder, repositoryOf, now }: {
@@ -39,7 +38,7 @@ export function SessionsPage({ events, hasMore, loadingOlder, onLoadOlder, repos
     {sessions.length ? <div className="sessions-layout">
       <nav className="session-list" aria-label="Sessions observées">
         {sessions.map(([key, items]) => {
-          const provider = providerByKey.get(items[0].provider);
+          const provider = providerFor(items[0].provider);
           const place = repositoryOf(items[0])?.name ?? items[0].project_path?.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? "dossier inconnu";
           return <button key={key} className="session-item" aria-current={key === current?.[0]} onClick={() => setSelected(key)} style={{ "--agent-color": provider?.color } as CSSProperties}>
             {provider && <ProviderMark provider={provider} small />}

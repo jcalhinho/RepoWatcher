@@ -4,6 +4,8 @@ export type SessionEvent = {
   occurred_at: string;
   /** Backend provider key (see `Provider.eventKey`). */
   provider: string;
+  /** Custom connector id when `provider` is "custom" (rekeyed to `custom:<id>` on load). */
+  agent?: string | null;
   kind: string;
   project_path: string | null;
   project_hash?: string | null;

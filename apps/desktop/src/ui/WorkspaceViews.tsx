@@ -4,13 +4,12 @@ import { ChevronDown, FileCode2, FolderGit2, FolderOpen, X } from "lucide-react"
 import { since } from "./AgentCard";
 import { InfoTip } from "./Explain";
 import { ProviderMark } from "./ProviderBadges";
-import { providers } from "./providers";
+import { providerFor } from "./providers";
 import type { SessionEvent } from "./types";
 import { pathKey, type RepositoryFilter, type WorkspaceRepository } from "./workspace";
 import type { WorkspaceModel } from "./useWorkspace";
 
 const ACTIVE_MS = 2 * 60_000;
-const providerByKey = new Map(providers.map((provider) => [provider.eventKey, provider]));
 
 
 /** Per-repository activity derived from the loaded events. */
@@ -125,7 +124,7 @@ export function RepositoryTable({ model, activity, selected, onSelect, onFilter 
         <td className="mono">{state?.error ? <span className="text-bad" title={state.error}>Git indisponible</span> : snapshot ? snapshot.branch ?? "HEAD détachée" : "…"}</td>
         <td className="mono">{snapshot && snapshot.ahead !== null && snapshot.behind !== null ? (snapshot.ahead || snapshot.behind ? <><span className={snapshot.ahead ? "text-accent" : ""}>↑{snapshot.ahead}</span> <span className={snapshot.behind ? "text-warn" : ""}>↓{snapshot.behind}</span></> : <span className="text-muted">à jour</span>) : <span className="text-muted" title="Aucune branche distante associée">—</span>}</td>
         <td className={changed ? "text-warn strong" : "text-muted"}>{changed === null ? "…" : changed || "aucun"}</td>
-        <td><span className="agent-marks">{info?.agents.length ? info.agents.map((key) => { const provider = providerByKey.get(key); return provider ? <span key={key} className={info.activeAgents.includes(key) ? "live" : ""} style={{ "--agent-color": provider.color } as CSSProperties} title={`${provider.name}${info.activeAgents.includes(key) ? " · actif en ce moment" : ""}`}><ProviderMark provider={provider} small /></span> : null; }) : <span className="text-muted">aucun</span>}</span></td>
+        <td><span className="agent-marks">{info?.agents.length ? info.agents.map((key) => { const provider = providerFor(key); return provider ? <span key={key} className={info.activeAgents.includes(key) ? "live" : ""} style={{ "--agent-color": provider.color } as CSSProperties} title={`${provider.name}${info.activeAgents.includes(key) ? " · actif en ce moment" : ""}`}><ProviderMark provider={provider} small /></span> : null; }) : <span className="text-muted">aucun</span>}</span></td>
         <td className="text-muted">{since(info?.lastAt ?? null, Date.now())}</td>
         <td><button className="button small" onClick={(event) => { event.stopPropagation(); onFilter(repository.path); }} title="Afficher seulement l’activité de ce dépôt dans la vue d’ensemble">Filtrer la vue</button></td>
       </tr>;

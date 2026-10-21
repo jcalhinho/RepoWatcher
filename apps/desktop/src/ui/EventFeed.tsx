@@ -1,9 +1,8 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { narrateEvent } from "./activity-copy";
-import { providers } from "./providers";
+import { providerFor } from "./providers";
 import type { SessionEvent } from "./types";
 
-const providerNames = new Map(providers.map((provider) => [provider.eventKey, provider]));
 
 const PAGE_SIZE = 50;
 
@@ -30,7 +29,7 @@ export const EventFeed = memo(function EventFeed({ events }: { events: SessionEv
 
 /** One event in plain language: when, which agent, what it did, with the raw record on demand. */
 export const EventRow = memo(function EventRow({ event, showDate = false }: { event: SessionEvent; showDate?: boolean }) {
-  const provider = providerNames.get(event.provider);
+  const provider = providerFor(event.provider);
   const narration = narrateEvent(event);
   const at = new Date(event.occurred_at);
   return <div className={`event-row tone-${narration?.tone ?? "info"}`}>

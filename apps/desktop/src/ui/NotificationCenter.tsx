@@ -5,13 +5,12 @@ import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { agentPulse, type AgentPulse } from "./agentPulse";
 import { isAlertStatus, notices, type Notice, type NoticeKind } from "./notificationRules";
 import { readPreference } from "./preferences";
-import { activeProviders } from "./providers";
+import { agentName, useAgents } from "./providers";
 import type { SessionEvent } from "./types";
 import { useNow } from "./useNow";
 
 export type FocusTarget = Notice["target"] & { agentName: string };
 
-const names = new Map(activeProviders.map((provider) => [provider.eventKey, provider.name]));
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
 
 export function notificationsEnabled(kind: NoticeKind) {
@@ -37,7 +36,9 @@ async function canNotify() {
  */
 export function NotificationCenter({ events, onGoTo }: { events: SessionEvent[]; onGoTo: (target: FocusTarget) => void }) {
   const now = useNow(3000);
-  const pulses = useMemo(() => activeProviders.map((provider) => agentPulse(provider.eventKey, events, now)), [events, now]);
+  const agents = useAgents();
+  const pulses = useMemo(() => agents.map((provider) => agentPulse(provider.eventKey, events, now)), [agents, events, now]);
+  const names = useMemo(() => new Map(agents.map((provider) => [provider.eventKey, provider.name])), [agents]);
   const notified = useRef(new Map<string, string>());
   const sentById = useRef(new Map<number, Notice>());
   const lastSent = useRef<Notice | null>(null);
@@ -78,7 +79,7 @@ export function NotificationCenter({ events, onGoTo }: { events: SessionEvent[];
       const notice = (event.notification && sentById.current.get(event.notification.id)) || lastSent.current;
       if (!notice) return;
       void getCurrentWindow().setFocus().catch(() => undefined);
-      goTo.current({ ...notice.target, agentName: names.get(notice.target.provider) ?? notice.target.provider });
+      goTo.current({ ...notice.target, agentName: agentName(notice.target.provider) });
     }).then((listener) => { stop = listener; }).catch(() => undefined);
     return () => { void stop?.unregister(); };
   }, []);
@@ -86,12 +87,12 @@ export function NotificationCenter({ events, onGoTo }: { events: SessionEvent[];
   const alerts = pulses.filter((pulse) => isAlertStatus(pulse.status) && pulse.session);
   if (!alerts.length) return null;
   return <div className="alert-banners" role="alert">
-    {alerts.map((pulse) => <AlertBanner key={pulse.key} pulse={pulse} onGoTo={() => goTo.current({ provider: pulse.key, sessionId: pulse.session!.id, projectPath: pulse.project?.project_path ?? null, agentName: names.get(pulse.key) ?? pulse.key })} />)}
+    {alerts.map((pulse) => <AlertBanner key={pulse.key} pulse={pulse} onGoTo={() => goTo.current({ provider: pulse.key, sessionId: pulse.session!.id, projectPath: pulse.project?.project_path ?? null, agentName: agentName(pulse.key) })} />)}
   </div>;
 }
 
 function AlertBanner({ pulse, onGoTo }: { pulse: AgentPulse; onGoTo: () => void }) {
-  const name = names.get(pulse.key) ?? pulse.key;
+  const name = agentName(pulse.key);
   const text = pulse.status === "looping" ? `${name} tourne en rond : ${pulse.loop?.evidence ?? "actions répétées sans progrès"}.` : `${name} enchaîne les erreurs : ${pulse.failureStreak} actions en échec d’affilée.`;
   return <div className={`alert-banner ${pulse.status}`}>
     <AlertTriangle size={16} />

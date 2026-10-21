@@ -22,7 +22,8 @@ import { useWorkspace } from "./useWorkspace";
 import { useFocusAgent } from "./useFocusAgent";
 import { FocusToast } from "./FocusToast";
 import { NotificationCenter } from "./NotificationCenter";
-import { providers } from "./providers";
+import { agentName, setCustomProviders, useAgents, type CustomConnectorInfo } from "./providers";
+import { invoke } from "@tauri-apps/api/core";
 import { filterByRepository, pathKey, type RepositoryFilter } from "./workspace";
 import { RepositoryFilterBar, WorkspaceSwitcher, useRepositoryActivity } from "./WorkspaceViews";
 
@@ -32,6 +33,8 @@ const isTab = oneOf("overview", "sessions", "repositories", "connectors", "setti
 const isRange = oneOf("15m", "1h", "24h", "all");
 
 export function App() {
+  useAgents();
+  useEffect(() => { invoke<CustomConnectorInfo[]>("list_custom_connectors").then(setCustomProviders).catch(() => undefined); }, []);
   const observer = useObserver();
   const [tab, setTab] = usePreference<Tab>("tab", "overview", isTab);
   const [range, setRange] = usePreference<AnalyticsRange>("analytics-range", "24h", isRange);
@@ -64,7 +67,7 @@ export function App() {
   const focus = useFocusAgent();
   const goToAgent = (pulse: AgentPulse) => {
     if (!pulse.session) return;
-    void focus.goTo({ provider: pulse.key, sessionId: pulse.session.id, projectPath: pulse.project?.project_path ?? null, agentName: providers.find((provider) => provider.eventKey === pulse.key)?.name ?? pulse.key });
+    void focus.goTo({ provider: pulse.key, sessionId: pulse.session.id, projectPath: pulse.project?.project_path ?? null, agentName: agentName(pulse.key) });
   };
   const watcher = <NotificationCenter events={agentWindow.events} onGoTo={(target) => void focus.goTo(target)} />;
   const toast = <FocusToast toast={focus.toast} onReveal={(path) => void focus.revealFolder(path)} onDismiss={focus.dismiss} />;

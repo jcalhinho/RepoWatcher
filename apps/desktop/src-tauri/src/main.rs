@@ -3,6 +3,7 @@
 mod claude_transcripts;
 mod codex_rollout;
 mod focus;
+mod ingest;
 mod gemini_sessions;
 mod opencode_sessions;
 mod qwen_sessions;
@@ -636,6 +637,47 @@ fn parse_window_commits(log: &str, since: i64, until: i64) -> Vec<WindowCommit> 
         .collect()
 }
 
+/// `POST /v1/events`: events from a custom connector (see `ingest.rs` and docs/CONNECTORS.md).
+async fn receive_custom_events(State(state): State<CollectorState>, request: Request) -> impl IntoResponse {
+    let token = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::to_owned);
+    let connector = token.and_then(|token| state.database.lock().ok().and_then(|database| ingest::connector_for_token(&database, &token)));
+    let Some(connector) = connector else {
+        return (StatusCode::UNAUTHORIZED, axum::Json(json!({ "error": "Jeton inconnu : copie celui du connecteur dans l’onglet Connecteurs." })));
+    };
+    let Ok(body) = axum::body::to_bytes(request.into_body(), 1024 * 1024).await else {
+        return (StatusCode::PAYLOAD_TOO_LARGE, axum::Json(json!({ "error": "Requête trop grosse (1 Mo maximum)." })));
+    };
+    let events = match ingest::parse(&body, &connector, state.capture_prompts.load(Ordering::Relaxed), state.capture_commands.load(Ordering::Relaxed)) {
+        Ok(events) => events,
+        Err(error) => return (StatusCode::BAD_REQUEST, axum::Json(json!({ "error": error }))),
+    };
+    let accepted = events.into_iter().filter(|event| persist_event(&state, event.clone())).count();
+    (StatusCode::OK, axum::Json(json!({ "accepted": accepted })))
+}
+
+#[tauri::command]
+fn list_custom_connectors(state: tauri::State<'_, CollectorState>) -> Result<Vec<ingest::CustomConnector>, String> {
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    ingest::list(&database).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn create_custom_connector(state: tauri::State<'_, CollectorState>, name: String) -> Result<ingest::CustomConnector, String> {
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    ingest::create(&database, &name)
+}
+
+#[tauri::command]
+fn delete_custom_connector(state: tauri::State<'_, CollectorState>, id: String) -> Result<(), String> {
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    ingest::delete(&database, &id)
+}
+
 async fn receive_claude_hook(
     State(state): State<CollectorState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -906,6 +948,7 @@ fn main() {
             fs::create_dir_all(&data_dir)?;
             let connection = Connection::open(data_dir.join("observer.sqlite3"))?;
             connection.execute_batch(SCHEMA)?;
+            connection.execute_batch(ingest::TABLE)?;
             // Old events go first, before anything reads the database.
             let _ = purge_expired_events(&connection, retention_days(&connection));
             let preference = |key: &str| -> bool {
@@ -926,6 +969,7 @@ fn main() {
             let address = SocketAddr::from(([127, 0, 0, 1], port));
             let router = Router::new()
                 .route("/claude-hook", post(receive_claude_hook))
+                .route("/v1/events", post(receive_custom_events))
                 .route("/cursor-hook", post(receive_cursor_hook))
                 .with_state(state.clone());
             let handle = app.handle().clone();
@@ -991,7 +1035,7 @@ fn main() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, load_analytics_events, export_session_history, repository_snapshot, focus_agent, reveal_folder, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, retention_policy, update_retention_policy, clear_session_history])
+        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, load_analytics_events, export_session_history, repository_snapshot, focus_agent, reveal_folder, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, retention_policy, update_retention_policy, list_custom_connectors, create_custom_connector, delete_custom_connector, clear_session_history])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }

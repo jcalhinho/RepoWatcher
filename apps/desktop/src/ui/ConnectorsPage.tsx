@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { since } from "./AgentCard";
 import { connectorSource, loadConnectorSetup, type ConnectorSetup } from "./ConnectorDialog";
+import { CustomConnectors } from "./CustomConnectors";
 import { SectionHeader } from "./Explain";
 import { ProviderMark } from "./ProviderBadges";
 import { activeProviders, type Provider } from "./providers";
@@ -44,7 +45,7 @@ export function ConnectorsPage({ events, now, onConfigure }: { events: SessionEv
   return <section className="page">
     <SectionHeader
       title="Connecteurs"
-      description="Un connecteur, c’est la façon dont l’app observe un agent. Quatre agents sont lus automatiquement ; seul Claude Code demande une petite configuration."
+      description="Un connecteur, c’est la façon dont l’app observe un agent. Quatre agents sont lus automatiquement, Claude Code demande une petite configuration, et tu peux brancher n’importe quel autre agent via l’API locale."
       details="Les connecteurs lisent ce que les agents écrivent déjà sur ton ordinateur (journaux, base locale) ou ce qu’ils envoient eux-mêmes (hooks Claude Code). Ils ne pilotent jamais les agents et ne modifient aucun de leurs réglages."
     />
     <div className="connector-list">
@@ -65,5 +66,6 @@ export function ConnectorsPage({ events, now, onConfigure }: { events: SessionEv
         </article>;
       })}
     </div>
+    <CustomConnectors events={events} now={now} />
   </section>;
 }

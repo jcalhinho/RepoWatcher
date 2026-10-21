@@ -6,7 +6,7 @@ import {
 import { BarList, LineChart, type BarRow } from "./charts";
 import { InfoTip } from "./Explain";
 import { Resizable } from "./Resizable";
-import { chartProviders, providers } from "./providers";
+import { providerFor, useAgents } from "./providers";
 import { sessionKey, type SessionEvent } from "./types";
 import type { WorkspaceRepository } from "./workspace";
 import type { AnalyticsDataset } from "./useAnalyticsEvents";
@@ -18,10 +18,8 @@ const NEUTRAL_STRONG = "#c3cad8";
 const NEUTRAL_SOFT = "#5f6a7f";
 const SINGLE_SERIES = "#7d8aa3";
 
-const CHART_KEYS = chartProviders.map((provider) => provider.eventKey);
-const byKey = new Map(providers.map((provider) => [provider.eventKey, provider]));
-const nameOf = (key: string) => byKey.get(key)?.name ?? key;
-const colorOf = (key: string) => byKey.get(key)?.color ?? SINGLE_SERIES;
+const nameOf = (key: string) => providerFor(key)?.name ?? key;
+const colorOf = (key: string) => providerFor(key)?.color ?? SINGLE_SERIES;
 const shortPath = (path: string) => path.replaceAll("\\", "/").split("/").filter(Boolean).slice(-2).join("/");
 
 export function SessionAnalytics({ events, range, onRange, dataset, repositoryOf }: {
@@ -34,6 +32,8 @@ export function SessionAnalytics({ events, range, onRange, dataset, repositoryOf
   repositoryOf?: (event: SessionEvent) => WorkspaceRepository | null;
 }) {
   const now = useNow(10_000);
+  const agents = useAgents();
+  const CHART_KEYS = useMemo(() => agents.map((provider) => provider.eventKey), [agents]);
 
   const data = useMemo(() => {
     const axis = timeAxis(events, range, now);
@@ -56,7 +56,7 @@ export function SessionAnalytics({ events, range, onRange, dataset, repositoryOf
       models: modelsUsed(scoped),
       repositories: repositoryOf ? eventsPerRepository(scoped, repositoryOf) : []
     };
-  }, [events, range, now, repositoryOf]);
+  }, [events, range, now, repositoryOf, CHART_KEYS]);
 
   const lines = (series: typeof data.activity) => series.map((line) => ({ key: line.key, label: nameOf(line.key), color: colorOf(line.key), values: line.values }));
   const callRows: BarRow[] = data.calls.map((row) => ({

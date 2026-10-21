@@ -29,10 +29,12 @@ pub enum Provider {
     Continue,
     Aider,
     QwenCode,
+    /// An agent sending its events through the open HTTP API; `SessionEvent.agent` names it.
+    Custom,
 }
 
 impl Provider {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::ClaudeCode,
         Self::Codex,
         Self::Cursor,
@@ -44,6 +46,7 @@ impl Provider {
         Self::Continue,
         Self::Aider,
         Self::QwenCode,
+        Self::Custom,
     ];
 
     pub const fn key(self) -> &'static str {
@@ -59,6 +62,7 @@ impl Provider {
             Self::Continue => "continue",
             Self::Aider => "aider",
             Self::QwenCode => "qwen_code",
+            Self::Custom => "custom",
         }
     }
 }
@@ -109,6 +113,9 @@ pub struct SessionEvent {
     pub session_id: String,
     pub occurred_at: DateTime<Utc>,
     pub provider: Provider,
+    /// Identifier of the custom connector that sent the event (`Provider::Custom` only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
     pub kind: EventKind,
     pub project_path: Option<String>,
     pub project_hash: Option<String>,
@@ -141,6 +148,7 @@ impl SessionEvent {
             session_id: session_id.into(),
             occurred_at: Utc::now(),
             provider,
+            agent: None,
             kind,
             project_path: None,
             project_hash: None,

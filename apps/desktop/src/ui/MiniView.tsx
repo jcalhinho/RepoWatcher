@@ -3,16 +3,15 @@ import { AgentCard } from "./AgentCard";
 import { useMemo } from "react";
 import { agentPulse, sortPulses, type AgentPulse } from "./agentPulse";
 import { CollectorStatus } from "./CollectorStatus";
-import { activeProviders, providers } from "./providers";
+import { agentName, useAgents } from "./providers";
 import type { SessionEvent } from "./types";
 import { useNow } from "./useNow";
-
-const providerNames = new Map(providers.map((provider) => [provider.eventKey, provider.name]));
 
 /** Compact always-visible column: one card per agent, the ones that need you first. */
 export function MiniView({ agentEvents, collectorState, pinned, onTogglePin, onExpand, repositoryName, onGoTo }: { agentEvents: SessionEvent[]; collectorState: string; pinned: boolean; onTogglePin: () => void; onExpand: () => void; repositoryName: (pulse: AgentPulse) => string | null; onGoTo: (pulse: AgentPulse) => void }) {
   const now = useNow(1000);
-  const pulses = useMemo(() => sortPulses(activeProviders.map((provider) => agentPulse(provider.eventKey, agentEvents, now))), [agentEvents, now]);
+  const agents = useAgents();
+  const pulses = useMemo(() => sortPulses(agents.map((provider) => agentPulse(provider.eventKey, agentEvents, now))), [agents, agentEvents, now]);
   const seen = pulses.filter((pulse) => pulse.status !== "never");
   const unseen = pulses.filter((pulse) => pulse.status === "never");
   const attention = pulses.filter((pulse) => pulse.status === "looping" || pulse.status === "blocked" || pulse.status === "stalled" || pulse.status === "waiting").length;
@@ -34,6 +33,6 @@ export function MiniView({ agentEvents, collectorState, pinned, onTogglePin, onE
         ? seen.map((pulse) => <AgentCard key={pulse.key} pulse={pulse} now={now} repository={repositoryName(pulse)} compact onGoTo={onGoTo} />)
         : <p className="mini-empty">Aucun agent observé pour l’instant. Lance une session avec Claude Code, Codex, Gemini CLI, OpenCode ou Qwen Code : elle apparaîtra ici.</p>}
     </div>
-    {unseen.length > 0 && <footer className="mini-footer">Pas encore vus : {unseen.map((pulse) => providerNames.get(pulse.key) ?? pulse.key).join(", ")}</footer>}
+    {unseen.length > 0 && <footer className="mini-footer">Pas encore vus : {unseen.map((pulse) => agentName(pulse.key)).join(", ")}</footer>}
   </div>;
 }
