@@ -340,13 +340,13 @@ pub fn pid_for_local_port(port: u16) -> Option<u32> {
             .output()
             .ok()?;
         let text = String::from_utf8_lossy(&output.stdout);
-        return text.lines().find_map(|line| {
+        text.lines().find_map(|line| {
             let parts: Vec<&str> = line.split_whitespace().collect();
             (parts.len() >= 5 && parts[1].ends_with(&format!(":{port}")))
                 .then(|| parts[4].parse::<u32>().ok())
                 .flatten()
                 .filter(|pid| *pid != own)
-        });
+        })
     }
     #[cfg(not(target_os = "windows"))]
     {

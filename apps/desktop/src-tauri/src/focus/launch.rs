@@ -28,6 +28,7 @@ pub fn resume_command(provider: &str, session_id: Option<&str>) -> Option<String
 }
 
 /// A word to put between single quotes in a POSIX shell.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
