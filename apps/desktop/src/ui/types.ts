@@ -4,6 +4,8 @@ export type SessionEvent = {
   occurred_at: string;
   /** Backend provider key (see `Provider.eventKey`). */
   provider: string;
+  /** Custom connector id when `provider` is "custom" (rekeyed to `custom:<id>` on load). */
+  agent?: string | null;
   kind: string;
   project_path: string | null;
   project_hash?: string | null;
@@ -13,6 +15,9 @@ export type SessionEvent = {
   content?: string | null;
   input_tokens?: { value: number; origin: string } | null;
   output_tokens?: { value: number; origin: string } | null;
+  /** Cached prompt tokens, reported apart from `input_tokens` (Claude Code transcripts). */
+  cache_read_tokens?: { value: number; origin: string } | null;
+  cache_write_tokens?: { value: number; origin: string } | null;
   model?: { value: string; origin: string } | null;
   duration_ms?: { value: number; origin: string } | null;
   outcome?: string | null;
@@ -29,7 +34,6 @@ export type RepositorySnapshot = {
   recent_commits: Array<{ short_id: string; subject: string; relative_time: string }>;
 };
 
-export function formatCount(value: number) { return new Intl.NumberFormat("fr-FR").format(value); }
 export function sessionKey(event: SessionEvent) { return `${event.provider}:${event.session_id}`; }
 export function compareEventsNewestFirst(a: SessionEvent, b: SessionEvent) {
   return b.occurred_at.localeCompare(a.occurred_at) || b.event_id.localeCompare(a.event_id);

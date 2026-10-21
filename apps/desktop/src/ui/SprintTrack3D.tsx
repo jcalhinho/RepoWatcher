@@ -1,7 +1,9 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { t } from "./i18n";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { Narration } from "./activity-copy";
+import type { PulseStatus } from "./agentPulse";
 import type { RaceStatus } from "./race";
 
 export type RaceLane = {
@@ -15,6 +17,18 @@ export type RaceLane = {
   cueKey: string | null;
   /** What the agent is doing now, shown in a speech bubble above its runner. */
   bubble?: Narration | null;
+  /** Agent status: decides what the runner does (run, circle, wave, sit, stoop). */
+  mood: PulseStatus;
+  /** Clicking the runner goes to the agent. */
+  onSelect?: () => void;
+};
+
+const NEEDS_YOU: PulseStatus[] = ["looping", "blocked", "stalled", "waiting"];
+const MOOD_ICONS: Partial<Record<PulseStatus, { symbol: string; color: string }>> = {
+  looping: { symbol: "↻", color: "#ff8f5a" },
+  blocked: { symbol: "!", color: "#e5484d" },
+  stalled: { symbol: "…", color: "#8a93a3" },
+  waiting: { symbol: "?", color: "#6f83ff" }
 };
 
 const START_X = -9;
@@ -59,7 +73,9 @@ function Low({ color, emissive }: { color: string; emissive?: string }) {
 export default function SprintTrack3D({ lanes, reducedMotion }: { lanes: RaceLane[]; reducedMotion: boolean }) {
   const active = lanes.filter((lane) => lane.status === "running" || lane.status === "recent");
   const bubbleRows = assignBubbleRows(lanes);
-  const leaderX = active.length ? progressToX(Math.max(...active.map((lane) => lane.progress))) : 0;
+  // The camera drifts towards the agent that needs you, otherwise towards the leader.
+  const needy = lanes.find((lane) => NEEDS_YOU.includes(lane.mood));
+  const leaderX = needy ? progressToX(needy.progress) : active.length ? progressToX(Math.max(...active.map((lane) => lane.progress))) : 0;
   return (
     <Canvas
       className="sprint-canvas"
@@ -68,7 +84,7 @@ export default function SprintTrack3D({ lanes, reducedMotion }: { lanes: RaceLan
       dpr={[1, 1.75]}
       camera={{ fov: 30, position: [0, 7, 12], near: 0.1, far: 140 }}
       gl={{ antialias: true, alpha: true, powerPreference: "low-power" }}
-      aria-label="Piste 3D de la course des agents"
+      aria-label={t("Piste 3D de la course des agents", "3D track of the agents’ race")}
     >
       <CameraRig leaderX={leaderX} reducedMotion={reducedMotion} />
       <hemisphereLight args={["#e4f5ff", "#6fae5f", 1.25]} />
@@ -84,6 +100,7 @@ export default function SprintTrack3D({ lanes, reducedMotion }: { lanes: RaceLan
         shadow-camera-bottom={-8}
         shadow-bias={-0.0006}
       />
+      <ambientLight intensity={0.25} />
       <Stadium lanes={lanes} excitement={active.length} reducedMotion={reducedMotion} />
       {lanes.map((lane, index) => (
         <Runner key={lane.id} lane={lane} z={laneZ(index, lanes.length)} bubbleRow={bubbleRows.get(lane.id) ?? 0} renderOrder={index} reducedMotion={reducedMotion} />
@@ -123,7 +140,7 @@ function CameraRig({ leaderX, reducedMotion }: { leaderX: number; reducedMotion:
     // Keep the whole 100 m (plus margins) in frame whatever the panel width.
     const distance = Math.max(11, 13.2 / (tanHalf * aspect));
     const sway = reducedMotion ? 0 : Math.sin(state.clock.elapsedTime * 0.15) * 0.3;
-    const lookX = leaderX * 0.12 + sway;
+    const lookX = leaderX * 0.22 + sway;
     target.current.copy(CAMERA_DIRECTION).multiplyScalar(distance);
     target.current.x += lookX;
     const blend = reducedMotion ? 1 : 1 - Math.exp(-Math.min(delta, 0.05) * 2);
@@ -356,6 +373,8 @@ function Runner({ lane, z, bubbleRow, renderOrder, reducedMotion }: { lane: Race
     pendingCue: null as RaceLane["cue"] | null,
     action: null as Action | null,
     confettiAt: -10,
+    loopAngle: 0,
+    heading: 0,
     velocities: Array.from({ length: CONFETTI_COUNT }, () => new THREE.Vector3())
   });
   const capColor = useMemo(() => `#${new THREE.Color(lane.color).multiplyScalar(0.72).getHexString()}`, [lane.color]);
@@ -387,7 +406,10 @@ function Runner({ lane, z, bubbleRow, renderOrder, reducedMotion }: { lane: Race
 
     const targetX = progressToX(lane.progress);
     state.x = reducedMotion ? targetX : state.x + (targetX - state.x) * (1 - Math.exp(-delta * 2.2));
-    const moving = lane.status === "running" || lane.status === "recent";
+    const mood = lane.mood;
+    const looping = mood === "looping" && !reducedMotion;
+    const halted = mood === "waiting" || mood === "stalled" || mood === "blocked";
+    const moving = looping || (!halted && (lane.status === "running" || lane.status === "recent"));
     state.stride += ((moving ? 1 : 0) - state.stride) * (1 - Math.exp(-delta * 5));
     const amplitude = reducedMotion ? 0 : state.stride;
     state.phase += delta * (5 + 7 * amplitude);
@@ -426,7 +448,32 @@ function Runner({ lane, z, bubbleRow, renderOrder, reducedMotion }: { lane: Race
       }
     }
 
-    root.current.position.set(state.x, y, z);
+    // Going round in circles: the runner literally laps a small ring on its lane.
+    let offsetX = 0;
+    let offsetZ = 0;
+    let heading = 0;
+    if (looping) {
+      state.loopAngle += delta * 3;
+      offsetX = Math.cos(state.loopAngle) * 0.7;
+      offsetZ = Math.sin(state.loopAngle) * 0.32;
+      heading = Math.atan2(-Math.cos(state.loopAngle) * 0.32, -Math.sin(state.loopAngle) * 0.7);
+    } else if (halted) {
+      // Turn towards the viewer: it is you the agent is waiting for.
+      heading = -Math.PI / 2;
+    }
+    state.heading += (heading - state.heading) * (1 - Math.exp(-delta * (looping ? 30 : 4)));
+    if (mood === "stalled" && !reducedMotion) {
+      y -= 0.24;
+      legSwing = 1.35;
+      lean = 0.25;
+      armSwing = 0.2;
+    } else if (mood === "blocked") {
+      lean = -0.55;
+      armSwing = 0.5;
+    }
+
+    root.current.position.set(state.x + offsetX, y, z + offsetZ);
+    root.current.rotation.y = state.heading;
     root.current.rotation.z = tilt;
     body.current.rotation.z = lean;
     leftLeg.current.rotation.z = legSwing;
@@ -434,13 +481,25 @@ function Runner({ lane, z, bubbleRow, renderOrder, reducedMotion }: { lane: Race
     const wave = armsUp ? Math.sin(time * 7 + z) * 0.18 : 0;
     leftArm.current.rotation.z = armSwing * (1 - armsUp) + armsUp * (Math.PI * 0.92 + wave);
     rightArm.current.rotation.z = -armSwing * (1 - armsUp) + armsUp * (Math.PI * 0.92 - wave);
+    if (mood === "waiting" && !reducedMotion) {
+      // One hand up, waving: "over here!"
+      rightArm.current.rotation.z = Math.PI * 0.85 + Math.sin(time * 6) * 0.35;
+    }
 
     animateConfetti(state, time, delta, confetti.current);
   });
 
   return (
     <>
-      <group ref={root} position={[motion.current.x, 0, z]} scale={RUNNER_SCALE}>
+      <group
+        ref={root}
+        position={[motion.current.x, 0, z]}
+        scale={RUNNER_SCALE}
+        onClick={(event) => { event.stopPropagation(); lane.onSelect?.(); }}
+        onPointerOver={() => { if (lane.onSelect) document.body.style.cursor = "pointer"; }}
+        onPointerOut={() => { document.body.style.cursor = ""; }}
+      >
+        <NameTag name={lane.name} color={lane.color} icon={MOOD_ICONS[lane.mood]} renderOrder={renderOrder} />
         {lane.bubble && <SpeechBubble narration={lane.bubble} color={lane.color} row={bubbleRow} flipped={bubbleFlipped(lane.progress)} renderOrder={renderOrder} />}
         {[-1, 1].map((side) => (
           <group key={side} ref={side < 0 ? leftLeg : rightLeg} position={[0, HIP_HEIGHT, side * 0.09]}>
@@ -505,6 +564,47 @@ function Runner({ lane, z, bubbleRow, renderOrder, reducedMotion }: { lane: Race
   );
 }
 
+/** The agent's name above its head, with its status symbol when it needs you. */
+function NameTag({ name, color, icon, renderOrder }: { name: string; color: string; icon?: { symbol: string; color: string }; renderOrder: number }) {
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.font = "700 52px system-ui, sans-serif";
+      const label = icon ? `${icon.symbol}  ${name}` : name;
+      const width = Math.min(500, context.measureText(label).width + 48);
+      const left = (512 - width) / 2;
+      context.fillStyle = "rgba(15, 19, 26, 0.82)";
+      context.beginPath();
+      context.roundRect(left, 22, width, 84, 42);
+      context.fill();
+      context.lineWidth = 6;
+      context.strokeStyle = icon?.color ?? color;
+      context.stroke();
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      if (icon) {
+        context.fillStyle = icon.color;
+        context.fillText(label.split("  ")[0], left + 44, 66);
+        context.fillStyle = "#f2f4f8";
+        context.fillText(name, 256 + 22, 66);
+      } else {
+        context.fillStyle = "#f2f4f8";
+        context.fillText(name, 256, 66);
+      }
+    }
+    const result = new THREE.CanvasTexture(canvas);
+    result.colorSpace = THREE.SRGBColorSpace;
+    return result;
+  }, [name, color, icon]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  return <sprite position={[0, 1.32, 0]} scale={[1.5, 0.375, 1]} renderOrder={5 + renderOrder}>
+    <spriteMaterial map={texture} transparent depthTest={false} />
+  </sprite>;
+}
+
 const BUBBLE_TONES: Record<Narration["tone"], string> = { work: "#3f4b5e", success: "#0b7a0b", failure: "#c02f2f", info: "#3f4b5e" };
 
 /** Two-line speech bubble: what the agent does (wrapped on up to two lines) and the reported detail. */
@@ -559,7 +659,7 @@ function SpeechBubble({ narration, color, row, flipped, renderOrder }: { narrati
     return result;
   }, [narration.text, narration.detail, narration.tone, color, flipped]);
   useEffect(() => () => texture.dispose(), [texture]);
-  return <sprite position={[flipped ? -1.4 : 1.4, 1.75 + row * 0.92, 0.08]} scale={[2.95, 0.86, 1]} renderOrder={10 + renderOrder}>
+  return <sprite position={[flipped ? -1.4 : 1.4, 2.05 + row * 0.92, 0.08]} scale={[2.95, 0.86, 1]} renderOrder={10 + renderOrder}>
     <spriteMaterial map={texture} transparent depthTest={false} />
   </sprite>;
 }

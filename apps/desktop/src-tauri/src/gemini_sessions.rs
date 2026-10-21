@@ -484,14 +484,7 @@ fn project_message(
             &format!("message:{message_id}:usage"),
         );
         usage.occurred_at = message_time;
-        usage.input_tokens = tokens
-            .get("input")
-            .and_then(Value::as_u64)
-            .map(provider_value);
-        usage.output_tokens = tokens
-            .get("output")
-            .and_then(Value::as_u64)
-            .map(provider_value);
+        project_token_usage(tokens, &mut usage);
         usage.model = message
             .get("model")
             .and_then(Value::as_str)
@@ -566,6 +559,39 @@ fn event(context: &SessionContext, kind: EventKind, key: &str) -> SessionEvent {
     event
 }
 
+/// Gemini CLI copies the API `usageMetadata`: `input` (promptTokenCount)
+/// includes the `cached` part, while `thoughts` (thoughtsTokenCount) and
+/// `tool` (toolUsePromptTokenCount) are counted apart from `output` and
+/// `input`. Thinking is billed as output and tool-use prompts as input, so
+/// both are folded back in; values computed here are marked derived.
+fn project_token_usage(tokens: &Value, usage: &mut SessionEvent) {
+    let count = |key: &str| tokens.get(key).and_then(Value::as_u64);
+    let cached = count("cached");
+    let tool = count("tool").unwrap_or(0);
+    usage.input_tokens = count("input").map(|input| {
+        if cached.unwrap_or(0) == 0 && tool == 0 {
+            return provider_value(input);
+        }
+        derived_value(input.saturating_sub(cached.unwrap_or(0)) + tool)
+    });
+    usage.cache_read_tokens = cached.map(provider_value);
+    let thoughts = count("thoughts").unwrap_or(0);
+    usage.output_tokens = count("output").map(|output| {
+        if thoughts == 0 {
+            provider_value(output)
+        } else {
+            derived_value(output + thoughts)
+        }
+    });
+}
+
+fn derived_value(value: u64) -> Sourced<u64> {
+    Sourced {
+        value,
+        origin: DataOrigin::Derived,
+    }
+}
+
 fn provider_value(value: u64) -> Sourced<u64> {
     Sourced {
         value,
@@ -633,6 +659,36 @@ mod tests {
             tool_calls: HashMap::new(),
             legacy_modified: None,
         }
+    }
+
+    #[test]
+    fn cached_prompt_and_thinking_tokens_are_priced_apart() {
+        let started = Utc::now() - Duration::seconds(1);
+        let record = json!({
+            "sessionId": "gemini-session",
+            "messages": [{
+                "id": "message-1", "type": "gemini", "timestamp": Utc::now().to_rfc3339(),
+                "model": "gemini-2.5-pro",
+                "tokens": { "input": 12000, "output": 300, "cached": 9000,
+                    "thoughts": 700, "tool": 50, "total": 13050 }
+            }]
+        });
+        let events = project_record(&record, &mut cursor(), started, false, false);
+        let usage = events
+            .iter()
+            .find(|event| event.kind == EventKind::ModelUsage)
+            .expect("Gemini provider usage observed");
+
+        let input = usage.input_tokens.as_ref().unwrap();
+        assert_eq!(input.value, 12000 - 9000 + 50);
+        assert_eq!(input.origin, DataOrigin::Derived);
+        assert_eq!(
+            usage.cache_read_tokens.as_ref().map(|value| value.value),
+            Some(9000)
+        );
+        let output = usage.output_tokens.as_ref().unwrap();
+        assert_eq!(output.value, 300 + 700);
+        assert_eq!(output.origin, DataOrigin::Derived);
     }
 
     #[test]

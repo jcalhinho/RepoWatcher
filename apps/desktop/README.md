@@ -35,6 +35,10 @@ distribution.
 
 ## Current implementation boundary
 
+For now the interface shows five agents: Claude Code, Codex, Gemini CLI,
+OpenCode and Qwen Code. The Cursor connector remains in the native runtime but is
+hidden, and its events are ignored by the interface.
+
 The app currently supports six local connectors: Claude Code through its
 documented HTTP hooks, Codex, Gemini CLI and Qwen Code through their local
 session logs, OpenCode through its local SQLite database in read-only mode, and

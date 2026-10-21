@@ -1,15 +1,15 @@
 import { useState, type ReactNode } from "react";
+import { t } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
+import { X } from "lucide-react";
 import type { ConnectorKind } from "./providers";
 
-type CapturePolicy = { capture_prompts: boolean; capture_commands: boolean };
-type ClaudeSetup = CapturePolicy & { endpoint: string; token: string; settings_fragment: string };
-type CodexSetup = CapturePolicy & { sessions_dir: string; available: boolean };
-type GeminiSetup = CapturePolicy & { sessions_dir: string; available: boolean };
-type OpenCodeSetup = CapturePolicy & { data_dir: string; database_paths: string[]; available: boolean };
-type CursorSetup = CapturePolicy & { endpoint: string; settings_fragment: string };
-type QwenSetup = CapturePolicy & { projects_dir: string; available: boolean };
-type SetupByKind = { claude: ClaudeSetup; codex: CodexSetup; gemini: GeminiSetup; opencode: OpenCodeSetup; cursor: CursorSetup; qwen: QwenSetup };
+type ClaudeSetup = { endpoint: string; token: string; settings_fragment: string };
+type CodexSetup = { sessions_dir: string; available: boolean };
+type GeminiSetup = { sessions_dir: string; available: boolean };
+type OpenCodeSetup = { data_dir: string; database_paths: string[]; available: boolean };
+type QwenSetup = { projects_dir: string; available: boolean };
+type SetupByKind = { claude: ClaudeSetup; codex: CodexSetup; gemini: GeminiSetup; opencode: OpenCodeSetup; qwen: QwenSetup };
 
 export type ConnectorSetup = { [K in ConnectorKind]: { kind: K; setup: SetupByKind[K] } }[ConnectorKind];
 
@@ -18,7 +18,6 @@ const SETUP_COMMANDS: Record<ConnectorKind, string> = {
   codex: "codex_setup",
   gemini: "gemini_setup",
   opencode: "opencode_setup",
-  cursor: "cursor_setup",
   qwen: "qwen_setup"
 };
 
@@ -27,121 +26,70 @@ export async function loadConnectorSetup(kind: ConnectorKind): Promise<Connector
   return { kind, setup } as ConnectorSetup;
 }
 
-/** Setup dialog of the active connector; the capture policy is shared by all connectors. */
+/** Where a log-based connector reads from, and whether that place exists on this computer. */
+export function connectorSource(connector: ConnectorSetup): { path: string; found: boolean } | null {
+  switch (connector.kind) {
+    case "claude": return null;
+    case "codex": return { path: connector.setup.sessions_dir, found: connector.setup.available };
+    case "gemini": return { path: connector.setup.sessions_dir, found: connector.setup.available };
+    case "qwen": return { path: connector.setup.projects_dir, found: connector.setup.available };
+    case "opencode": return { path: connector.setup.database_paths.join(" · ") || connector.setup.data_dir, found: connector.setup.available };
+  }
+}
+
+function readOnlyCopy(kind: Exclude<ConnectorKind, "claude">): { name: string; how: string; tokens: string } {
+  switch (kind) {
+    case "codex": return { name: "Codex", how: t("L’app lit les journaux de session que Codex écrit sur ton disque, au fur et à mesure.", "The app reads the session logs Codex writes to your disk, as they are written."), tokens: t("Codex fournit les tokens de chaque requête au modèle.", "Codex reports the tokens of each model request.") };
+    case "gemini": return { name: "Gemini CLI", how: t("L’app lit les enregistrements de conversation que Gemini CLI écrit pour chaque projet.", "The app reads the conversation records Gemini CLI writes for each project."), tokens: t("Gemini CLI fournit les tokens et la durée de chaque réponse.", "Gemini CLI reports the tokens and duration of each answer.") };
+    case "qwen": return { name: "Qwen Code", how: t("L’app lit les journaux de conversation que Qwen Code écrit pour chaque projet.", "The app reads the conversation logs Qwen Code writes for each project."), tokens: t("Qwen Code fournit les tokens, le modèle et la durée de chaque requête.", "Qwen Code reports the tokens, model and duration of each request.") };
+    case "opencode": return { name: "OpenCode", how: t("L’app lit la base de données d’OpenCode en lecture seule.", "The app reads OpenCode’s database, read-only."), tokens: t("OpenCode fournit les tokens de chaque réponse.", "OpenCode reports the tokens of each answer.") };
+  }
+}
+
+/** How a connector works and, for Claude Code, the hooks to add. Capture options live in Réglages. */
 export function ConnectorSetupDialog({ connector, onClose }: { connector: ConnectorSetup; onClose: () => void }) {
-  const [capturePrompts, setCapturePrompts] = useState(connector.setup.capture_prompts);
-  const [captureCommands, setCaptureCommands] = useState(connector.setup.capture_commands);
-  const [policyError, setPolicyError] = useState("");
-  const [copyState, setCopyState] = useState("Copier le fragment JSON");
-
-  async function saveCapturePolicy(prompts: boolean, commands: boolean) {
-    setPolicyError("");
-    setCapturePrompts(prompts);
-    setCaptureCommands(commands);
-    try {
-      await invoke("update_capture_policy", { capturePrompts: prompts, captureCommands: commands });
-    } catch {
-      setPolicyError("Impossible d’enregistrer les préférences depuis l’aperçu web.");
-    }
+  const [copied, setCopied] = useState(false);
+  if (connector.kind === "claude") {
+    const { setup } = connector;
+    const copy = async () => {
+      await navigator.clipboard.writeText(setup.settings_fragment);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    };
+    return <Dialog id="claude" title={t("Brancher Claude Code", "Set up Claude Code")} onClose={onClose}>
+      <p>{t("Claude Code prévient l’app de chacune de ses actions grâce à des hooks : de petites notifications envoyées à l’app pendant qu’il travaille. Les tokens viennent en plus de son journal de session, lu automatiquement.", "Claude Code tells the app about each of its actions through hooks: small notifications sent to the app while it works. Tokens also come from its session log, read automatically.")}</p>
+      <ol className="steps">
+        <li>{t("Ouvre ton fichier de réglages Claude Code :", "Open your Claude Code settings file:")} <code>~/.claude/settings.json</code> (Windows : <code>%USERPROFILE%\.claude\settings.json</code>).</li>
+        <li>{t("Ajoute le bloc hooks ci-dessous à l’objet existant, sans effacer le reste du fichier.", "Add the hooks block below to the existing object, without erasing the rest of the file.")}</li>
+        <li>{t("Les sessions Claude Code apparaissent ensuite dans l’app. L’app ne modifie jamais ce fichier elle-même.", "Claude Code sessions then show up in the app. The app never edits this file itself.")}</li>
+      </ol>
+      <textarea readOnly value={setup.settings_fragment} aria-label={t("Bloc hooks à ajouter aux réglages Claude Code", "Hooks block to add to the Claude Code settings")} />
+      <p className="dialog-note">{t("Ce bloc contient un jeton propre à cette installation : si tu réinstalles l’app, recopie-le. Si l’app est fermée, les hooks abandonnent après 2 secondes sans gêner Claude Code.", "This block holds a token specific to this installation: copy it again if you reinstall the app. If the app is closed, hooks give up after 2 seconds without disturbing Claude Code.")}</p>
+      <div className="dialog-actions"><button className="button" onClick={onClose}>{t("Fermer", "Close")}</button><button className="button primary" onClick={copy}>{copied ? t("Copié ✓", "Copied ✓") : t("Copier le bloc", "Copy the block")}</button></div>
+    </Dialog>;
   }
-
-  const commandsToggle = (title: string, hint: string) => <CaptureToggle checked={captureCommands} onChange={(checked) => saveCapturePolicy(capturePrompts, checked)} title={title} hint={hint} />;
-  const promptsToggle = (hint: string) => <CaptureToggle checked={capturePrompts} onChange={(checked) => saveCapturePolicy(checked, captureCommands)} title="Enregistrer le texte de mes prompts" hint={hint} />;
-  const error = policyError && <p className="policy-error">{policyError}</p>;
-
-  switch (connector.kind) {
-    case "claude": {
-      const { setup } = connector;
-      const copy = async () => {
-        await navigator.clipboard.writeText(setup.settings_fragment);
-        setCopyState("Copié");
-        window.setTimeout(() => setCopyState("Copier le fragment JSON"), 1800);
-      };
-      return <ConnectorDialog id="claude" eyebrow="CONNECTEUR LOCAL" title="Brancher Claude Code" onClose={onClose}>
-        <p>Ajoute ce fragment dans les réglages utilisateur Claude Code (`~/.claude/settings.json`, ou `%USERPROFILE%\.claude\settings.json` sous Windows). Fusionne-le avec l’existant : ne remplace pas tout le fichier. Aucun réglage n’est modifié automatiquement.</p>
-        <ol><li>Ouvre les réglages utilisateur Claude Code.</li><li>Ajoute les entrées <code>hooks</code> dans l’objet existant.</li><li>Redémarre une session Claude Code pour recevoir les événements.</li></ol>
-        <div className="privacy-options">{commandsToggle("Enregistrer les commandes Bash/PowerShell", "Peuvent contenir des chemins, jetons ou mots de passe collés dans le shell.")}{promptsToggle("Peut inclure du code privé ou des données confidentielles.")}{error}<small>Si activé, le contenu reste dans la base SQLite locale de cette installation. Les sorties d’outils et transcriptions ne sont jamais conservées.</small></div>
-        <textarea readOnly value={setup.settings_fragment} aria-label="Configuration Claude Code" />
-        <div className="setup-note">Toujours captés : identifiant de session, outil, chemin du dépôt/fichier et type d’événement. Entrée locale authentifiée : <code>{setup.endpoint}</code></div>
-        <div className="setup-actions"><button className="outline-button" onClick={onClose}>Fermer</button><button className="primary-button" onClick={copy}>{copyState}</button></div>
-      </ConnectorDialog>;
-    }
-    case "cursor": {
-      const { setup } = connector;
-      return <ConnectorDialog id="cursor" eyebrow="CONNECTEUR LOCAL · HOOKS CURSOR" title="Brancher Cursor" onClose={onClose}>
-        <p>Fusionne ce fragment dans <code>~/.cursor/hooks.json</code> (Windows : <code>%USERPROFILE%\.cursor\hooks.json</code>). Ne remplace pas un fichier existant : ajoute les événements dans son bloc <code>hooks</code>. Aucun réglage Cursor n’est modifié automatiquement.</p>
-        <ol><li>Laisse Agent Observer ouvert pendant une session Cursor.</li><li>Ajoute le fragment aux réglages de hooks utilisateur.</li><li>Cursor recharge les hooks ; démarre une conversation pour vérifier le flux.</li></ol>
-        <div className="privacy-options">{commandsToggle("Enregistrer les commandes transmises aux outils", "Désactivé par défaut ; peut contenir des secrets.")}<small>Prompts, réponses, sorties, transcriptions, identités et pensées ne sont pas conservés. Cursor n’expose pas de compteurs de tokens dans ces hooks.</small>{error}</div>
-        <textarea readOnly value={setup.settings_fragment} aria-label="Configuration des hooks Cursor" />
-        <div className="setup-note">Les hooks d’observation n’interviennent pas dans les autorisations de Cursor. Entrée locale authentifiée : <code>{setup.endpoint}</code></div>
-        <div className="setup-actions"><button className="outline-button" onClick={onClose}>Fermer</button><button className="primary-button" onClick={async () => { await navigator.clipboard.writeText(setup.settings_fragment); onClose(); }}>Copier le fragment JSON</button></div>
-      </ConnectorDialog>;
-    }
-    case "codex":
-    case "gemini":
-    case "opencode":
-    case "qwen": {
-      const source = localSourceCopy(connector);
-      return <ConnectorDialog id={connector.kind} eyebrow={source.eyebrow} title={source.title} onClose={onClose}>
-        <p>{source.description}</p>
-        <div className="privacy-options"><div><b>{source.sourceLabel}</b><small>{source.sourceState}<br /><code>{source.sourcePath}</code></small></div>{commandsToggle("Enregistrer les commandes transmises aux outils", "Désactivé par défaut ; une commande peut contenir des secrets.")}{promptsToggle("Désactivé par défaut ; peut contenir du code et des données privées.")}{error}<small>{source.retention}</small></div>
-        <div className="setup-note">{source.note}</div>
-        <div className="setup-actions"><button className="primary-button" onClick={onClose}>Terminé</button></div>
-      </ConnectorDialog>;
-    }
-  }
+  const copy = readOnlyCopy(connector.kind);
+  const source = connectorSource(connector)!;
+  return <Dialog id={connector.kind} title={t(`${copy.name} : observé automatiquement`, `${copy.name}: observed automatically`)} onClose={onClose}>
+    <p>{copy.how} {t(`Il n’y a rien à configurer et aucun réglage de ${copy.name} n’est modifié.`, `Nothing to set up, and no ${copy.name} setting is changed.`)}</p>
+    <dl className="facts">
+      <div><dt>Source</dt><dd><code>{source.path}</code></dd></div>
+      <div><dt>{t("État", "State")}</dt><dd>{source.found ? t("Trouvée sur cet ordinateur.", "Found on this computer.") : t(`Introuvable pour l’instant : lance ${copy.name} une première fois.`, `Not found yet: run ${copy.name} once.`)}</dd></div>
+      <div><dt>Tokens</dt><dd>{copy.tokens}</dd></div>
+      <div><dt>{t("Historique", "History")}</dt><dd>{t("Seules les sessions qui ont lieu pendant que l’app est ouverte sont observées.", "Only sessions that happen while the app is open are observed.")}</dd></div>
+    </dl>
+    <div className="dialog-actions"><button className="button primary" onClick={onClose}>{t("Compris", "Got it")}</button></div>
+  </Dialog>;
 }
 
-/** Copy of the read-only connectors that tail local journals or databases. */
-function localSourceCopy(connector: Extract<ConnectorSetup, { kind: "codex" | "gemini" | "opencode" | "qwen" }>) {
-  switch (connector.kind) {
-    case "codex": return {
-      eyebrow: "CONNECTEUR LOCAL · JOURNAUX NATIFS",
-      title: "Codex est observé localement",
-      description: "RepoWatcher suit les journaux de session Codex sur cet ordinateur ; aucun réglage Codex n’est modifié. Les nouveaux événements sont lus à mesure qu’ils sont écrits. L’historique antérieur au démarrage de RepoWatcher n’est pas importé.",
-      sourceLabel: "Source locale",
-      sourceState: connector.setup.available ? "Dossier Codex détecté" : "Dossier Codex absent pour l’instant",
-      sourcePath: connector.setup.sessions_dir,
-      retention: "Les sorties d’outils, réponses assistant et raisonnements ne sont jamais conservés. Seuls les champs opérationnels nécessaires à la timeline sont extraits.",
-      note: "Codex peut fournir les événements d’outils et les compteurs input/output par requête dans ses journaux locaux. Ces compteurs ne sont pas un coût total universel et peuvent évoluer selon la version de Codex."
-    };
-    case "gemini": return {
-      eyebrow: "CONNECTEUR LOCAL · JOURNAUX NATIFS",
-      title: "Gemini CLI est observé localement",
-      description: "RepoWatcher suit les enregistrements de sessions Gemini CLI ; aucun réglage Gemini n’est modifié. Les nouveaux messages sont suivis à mesure qu’ils sont écrits. L’historique antérieur au démarrage n’est pas importé.",
-      sourceLabel: "Source locale",
-      sourceState: connector.setup.available ? "Dossier Gemini détecté" : "Dossier Gemini absent pour l’instant",
-      sourcePath: connector.setup.sessions_dir,
-      retention: "Les sorties d’outils, réponses assistant et pensées ne sont jamais conservées. Seuls les champs opérationnels nécessaires à la timeline sont extraits.",
-      note: "Gemini CLI stocke séparément des fichiers par projet. Le SHA-256 du chemin du projet sert à rapprocher ces événements du dépôt sélectionné sans révéler ni transmettre ce chemin à Gemini."
-    };
-    case "qwen": return {
-      eyebrow: "CONNECTEUR LOCAL · JOURNAUX NATIFS",
-      title: "Qwen Code est observé localement",
-      description: "RepoWatcher suit les journaux de conversation Qwen Code de chaque projet ; aucun réglage Qwen n’est modifié. Les nouveaux enregistrements sont lus à mesure qu’ils sont écrits. L’historique antérieur au démarrage de RepoWatcher n’est pas importé.",
-      sourceLabel: "Source locale",
-      sourceState: connector.setup.available ? "Dossier Qwen Code détecté" : "Dossier Qwen Code absent pour l’instant",
-      sourcePath: connector.setup.projects_dir,
-      retention: "Les réponses assistant, pensées, sorties d’outils et textes de réponse API ne sont jamais conservés. Seuls les champs opérationnels nécessaires à la timeline sont extraits.",
-      note: "Qwen Code enregistre les compteurs input/output et la durée de chaque requête au modèle, ainsi que le résultat de chaque tour. Ces valeurs sont reprises telles quelles, sans estimation."
-    };
-    case "opencode": return {
-      eyebrow: "CONNECTEUR LOCAL · SQLITE EN LECTURE SEULE",
-      title: "OpenCode est observé localement",
-      description: "RepoWatcher lit la base de sessions OpenCode en lecture seule. Aucun serveur n’est lancé et aucun réglage OpenCode n’est modifié. Seules les lignes ajoutées ou mises à jour après le lancement sont observées ; l’historique antérieur n’est pas importé.",
-      sourceLabel: "Base détectée",
-      sourceState: connector.setup.available ? "Base(s) SQLite trouvée(s)" : "Aucune base détectée pour l’instant",
-      sourcePath: connector.setup.database_paths.join(" · ") || connector.setup.data_dir,
-      retention: "Les textes assistant, raisonnements, sorties et résultats d’outils sont ignorés. Les compteurs input/output ne sont conservés que s’ils figurent dans les enregistrements OpenCode.",
-      note: "OpenCode utilise SQLite avec journal WAL. Les sessions précédant le démarrage de RepoWatcher ne sont pas importées."
-    };
-  }
-}
-
-function ConnectorDialog({ id, eyebrow, title, onClose, children }: { id: string; eyebrow: string; title: string; onClose: () => void; children: ReactNode }) {
-  return <div className="setup-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="setup-dialog" role="dialog" aria-modal="true" tabIndex={-1} aria-labelledby={`${id}-setup-title`}><button className="setup-close" onClick={onClose} aria-label="Fermer">×</button><div className="eyebrow">{eyebrow}</div><h2 id={`${id}-setup-title`}>{title}</h2>{children}</section></div>;
-}
-
-function CaptureToggle({ checked, onChange, title, hint }: { checked: boolean; onChange: (checked: boolean) => void; title: string; hint: string }) {
-  return <label><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span><b>{title}</b><small>{hint}</small></span></label>;
+function Dialog({ id, title, onClose, children }: { id: string; title: string; onClose: () => void; children: ReactNode }) {
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="dialog" role="dialog" aria-modal="true" tabIndex={-1} aria-labelledby={`${id}-dialog-title`}>
+      <header className="dialog-header"><h2 id={`${id}-dialog-title`}>{title}</h2><button className="icon-button" onClick={onClose} aria-label={t("Fermer", "Close")}><X size={16} /></button></header>
+      <div className="dialog-body">
+        {children}
+        <p className="dialog-note">{t("Ce qui est enregistré (texte des prompts, commandes) se règle dans l’onglet Réglages.", "What is recorded (prompt text, commands) is set in the Settings tab.")}</p>
+      </div>
+    </section>
+  </div>;
 }

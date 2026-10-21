@@ -1,9 +1,14 @@
+import { locale, t } from "./i18n";
 import type { SessionEvent } from "./types";
 
 /** Time windows offered above the charts; "all" spans the loaded events. */
 export type AnalyticsRange = "15m" | "1h" | "24h" | "all";
 
-export const RANGE_LABELS: Record<AnalyticsRange, string> = { "15m": "15 min", "1h": "1 h", "24h": "24 h", all: "Tout" };
+export const RANGES: AnalyticsRange[] = ["15m", "1h", "24h", "all"];
+
+export function rangeLabel(range: AnalyticsRange) {
+  return range === "all" ? t("Tout", "All") : range === "15m" ? "15 min" : range === "1h" ? "1 h" : "24 h";
+}
 
 const MINUTE = 60_000;
 const RANGE_SPECS: Record<Exclude<AnalyticsRange, "all">, { span: number; buckets: number }> = {
@@ -47,7 +52,9 @@ export function bucketSeries(events: SessionEvent[], providerKeys: string[], axi
   return providerKeys.map((key) => ({ key, values: rows.get(key)! }));
 }
 
-export const totalTokens = (event: SessionEvent) => (event.input_tokens?.value || 0) + (event.output_tokens?.value || 0);
+/** Prompt tokens the model read, cached or not. */
+const promptTokens = (event: SessionEvent) => (event.input_tokens?.value || 0) + (event.cache_read_tokens?.value || 0) + (event.cache_write_tokens?.value || 0);
+export const totalTokens = (event: SessionEvent) => promptTokens(event) + (event.output_tokens?.value || 0);
 
 export type AgentToolCalls = { key: string; succeeded: number; failed: number };
 
@@ -102,7 +109,7 @@ export function tokensByAgent(events: SessionEvent[], providerKeys: string[]): A
     const own = events.filter((event) => event.provider === key);
     return {
       key,
-      input: own.reduce((sum, event) => sum + (event.input_tokens?.value || 0), 0),
+      input: own.reduce((sum, event) => sum + promptTokens(event), 0),
       output: own.reduce((sum, event) => sum + (event.output_tokens?.value || 0), 0)
     };
   }).filter((row) => row.input + row.output > 0);
@@ -140,13 +147,13 @@ export function modelsUsed(events: SessionEvent[], limit = 12): ModelUsage[] {
 }
 
 export function formatCompact(value: number) {
-  return new Intl.NumberFormat("fr-FR", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat(locale(), { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 export function formatDuration(ms: number) {
   if (ms < 1000) return `${Math.round(ms)} ms`;
   const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} s`;
+  if (seconds < 60) return `${seconds.toLocaleString(locale(), { maximumFractionDigits: 1 })} s`;
   const minutes = Math.floor(seconds / 60);
   return `${minutes} min ${String(Math.round(seconds % 60)).padStart(2, "0")} s`;
 }

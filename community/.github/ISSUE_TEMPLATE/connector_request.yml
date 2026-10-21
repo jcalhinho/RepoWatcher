@@ -1,0 +1,87 @@
+name: Connector request
+description: Ask for an agent Agent Observer does not observe yet.
+title: "[Connector]: "
+labels: ["connector", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Agent Observer only reads what an agent already exposes locally, never changes its settings, and never stores responses, reasoning or tool outputs.
+        The more precisely you describe *where* the agent records its activity, the faster a connector can be written.
+        Prefer writing it yourself? See [docs/CONNECTORS.md](https://github.com/jcalhinho/agent-observer/blob/main/docs/CONNECTORS.md) for the local HTTP API.
+
+  - type: input
+    id: agent
+    attributes:
+      label: Agent
+      placeholder: "Aider, Cline, GitHub Copilot CLI, …"
+    validations:
+      required: true
+
+  - type: input
+    id: link
+    attributes:
+      label: Project or documentation link
+      placeholder: "https://…"
+    validations:
+      required: true
+
+  - type: input
+    id: agent-version
+    attributes:
+      label: Agent version you use
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system(s) you use it on
+      multiple: true
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: How does the agent expose its activity?
+      description: Pick everything you know of.
+      multiple: true
+      options:
+        - Documented hooks / event callbacks
+        - Local log files (JSON / JSONL)
+        - Local database (SQLite, …)
+        - A local server or API
+        - Plugin / extension API
+        - I don't know
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Where and what
+      description: |
+        Paths of the files or database, environment variables that move them, hook documentation, and which events are visible
+        (session start, prompt, tool start/end, tool failure, turn end, token usage, model).
+      placeholder: |
+        Logs in ~/.agent/sessions/<id>.jsonl, one JSON object per line.
+        Tool calls appear as {"type":"tool_use","name":…}. Token usage in {"usage":{"input":…,"output":…}}.
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: Anonymised sample
+      description: A few redacted records help a lot. Remove prompts, code, paths and keys.
+      render: json
+
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to write or test this connector myself.

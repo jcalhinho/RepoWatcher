@@ -12,6 +12,8 @@
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-min-size",
     "core:window:allow-center",
-    "dialog:default"
+    "dialog:default",
+    "notification:default",
+    "core:window:allow-set-badge-count"
   ]
 }

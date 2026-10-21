@@ -1,25 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { t } from "./i18n";
 import { Maximize2, Minimize2 } from "lucide-react";
-
-const STORAGE_PREFIX = "repowatcher.section-height.";
-
-function readHeight(id: string, fallback: number) {
-  try {
-    const stored = Number(window.localStorage.getItem(STORAGE_PREFIX + id));
-    return Number.isFinite(stored) && stored > 0 ? stored : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function storeHeight(id: string, height: number | null) {
-  try {
-    if (height === null) window.localStorage.removeItem(STORAGE_PREFIX + id);
-    else window.localStorage.setItem(STORAGE_PREFIX + id, String(Math.round(height)));
-  } catch {
-    /* the size preference is optional */
-  }
-}
+import { isNumber, readPreference, writePreference } from "./preferences";
 
 /**
  * A section whose height the user drags from its bottom handle (double-click resets, arrow keys
@@ -27,7 +9,7 @@ function storeHeight(id: string, height: number | null) {
  * per `id`. Children should fill the box (height: 100%).
  */
 export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, className = "", children }: { id: string; defaultHeight: number; min?: number; max?: number; label: string; className?: string; children: ReactNode }) {
-  const [height, setHeight] = useState(() => readHeight(id, defaultHeight));
+  const [height, setHeight] = useState(() => readPreference(`section-height.${id}`, defaultHeight, isNumber));
   const [maximized, setMaximized] = useState(false);
   const drag = useRef<{ startY: number; startHeight: number } | null>(null);
   const clamp = (value: number) => Math.min(max, Math.max(min, value));
@@ -42,7 +24,7 @@ export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, cla
   function commit(next: number) {
     const value = clamp(next);
     setHeight(value);
-    storeHeight(id, value);
+    writePreference(`section-height.${id}`, Math.round(value));
   }
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -59,7 +41,7 @@ export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, cla
   function onPointerUp() {
     if (!drag.current) return;
     drag.current = null;
-    storeHeight(id, height);
+    writePreference(`section-height.${id}`, Math.round(height));
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -74,11 +56,11 @@ export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, cla
 
   function reset() {
     setHeight(defaultHeight);
-    storeHeight(id, null);
+    writePreference(`section-height.${id}`, null);
   }
 
   return <div className={`resizable ${maximized ? "is-maximized" : ""} ${className}`} style={{ "--section-height": `${height}px` } as CSSProperties} aria-label={label}>
-    <button className="resizable-maximize" onClick={() => setMaximized((value) => !value)} aria-pressed={maximized} title={maximized ? "Réduire (Échap)" : "Agrandir en plein écran"} aria-label={maximized ? `Réduire ${label}` : `Agrandir ${label}`}>
+    <button className="resizable-maximize" onClick={() => setMaximized((value) => !value)} aria-pressed={maximized} title={maximized ? t("Réduire (Échap)", "Restore (Esc)") : t("Agrandir en plein écran", "Full screen")} aria-label={maximized ? t(`Réduire ${label}`, `Restore ${label}`) : t(`Agrandir ${label}`, `Maximize ${label}`)}>
       {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
     </button>
     <div className="resizable-body">{children}</div>
@@ -86,12 +68,12 @@ export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, cla
       className="resizable-handle"
       role="separator"
       aria-orientation="horizontal"
-      aria-label={`Redimensionner ${label}`}
+      aria-label={t(`Redimensionner ${label}`, `Resize ${label}`)}
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={Math.round(height)}
       tabIndex={0}
-      title="Glisser pour redimensionner · double-clic pour revenir à la taille par défaut"
+      title={t("Glisser pour redimensionner · double-clic pour revenir à la taille par défaut", "Drag to resize · double-click to reset")}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

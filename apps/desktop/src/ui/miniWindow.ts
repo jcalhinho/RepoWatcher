@@ -1,6 +1,6 @@
 import { LogicalPosition, LogicalSize, currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { readPreference, writePreference } from "./preferences";
 
-const SAVED_FRAME = "repowatcher.full-window-frame";
 const MINI_WIDTH = 380;
 const MARGIN = 16;
 const FULL_MIN = { width: 1120, height: 720 };
@@ -54,17 +54,12 @@ export async function leaveMiniWindow() {
 
 type Frame = { width: number; height: number; x: number; y: number };
 
+const isFrame = (value: unknown): value is Frame => typeof value === "object" && value !== null && ["width", "height", "x", "y"].every((key) => Number.isFinite((value as Record<string, unknown>)[key]));
+
 function saveFrame(frame: Frame) {
-  try {
-    localStorage.setItem(SAVED_FRAME, JSON.stringify(frame));
-  } catch { /* optional */ }
+  writePreference("full-window-frame", frame);
 }
 
 function readFrame(): Frame | null {
-  try {
-    const frame = JSON.parse(localStorage.getItem(SAVED_FRAME) ?? "null");
-    return frame && [frame.width, frame.height, frame.x, frame.y].every(Number.isFinite) ? frame : null;
-  } catch {
-    return null;
-  }
+  return readPreference<Frame | null>("full-window-frame", null, (value): value is Frame | null => value === null || isFrame(value));
 }

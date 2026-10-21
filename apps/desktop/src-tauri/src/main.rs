@@ -1,14 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod claude_transcripts;
 mod codex_rollout;
+mod focus;
 mod gemini_sessions;
+mod ingest;
 mod opencode_sessions;
 mod qwen_sessions;
 mod workspace;
 
 use axum::{
     Router,
-    extract::{Request, State},
+    extract::{ConnectInfo, Request, State},
     http::{StatusCode, header},
     response::IntoResponse,
     routing::post,
@@ -39,6 +42,8 @@ struct CollectorState {
     status: Arc<Mutex<String>>,
     capture_prompts: Arc<AtomicBool>,
     capture_commands: Arc<AtomicBool>,
+    /// Claude Code process of each session, learnt from the connection of its first hook.
+    agent_pids: Arc<Mutex<std::collections::HashMap<String, u32>>>,
 }
 
 #[derive(Serialize)]
@@ -142,6 +147,7 @@ fn claude_setup(state: tauri::State<'_, CollectorState>) -> ClaudeSetup {
         "PostToolUse": hook(),
         "PostToolUseFailure": hook(),
         "Stop": hook(),
+        "Notification": hook(),
         "SessionEnd": hook()
     }});
     ClaudeSetup {
@@ -268,6 +274,60 @@ fn update_capture_policy(
     Ok(())
 }
 
+const SCHEMA: &str = "PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON; CREATE TABLE IF NOT EXISTS session_events (event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, occurred_at TEXT NOT NULL, provider TEXT NOT NULL, kind TEXT NOT NULL, project_path TEXT, payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_session_events_time ON session_events(occurred_at); CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value INTEGER NOT NULL);";
+
+/// Days events are kept; 0 keeps everything.
+const DEFAULT_RETENTION_DAYS: i64 = 30;
+const PURGE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+fn retention_days(connection: &Connection) -> i64 {
+    connection
+        .query_row(
+            "SELECT value FROM preferences WHERE key='retention_days'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .unwrap_or(DEFAULT_RETENTION_DAYS)
+}
+
+/// Deletes events older than `days` (none when `days` is 0) and returns how many were removed.
+fn purge_expired_events(connection: &Connection, days: i64) -> rusqlite::Result<usize> {
+    if days <= 0 {
+        return Ok(0);
+    }
+    // Same RFC 3339 shape as the stored `occurred_at`, so text comparison orders correctly.
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
+    connection.execute(
+        "DELETE FROM session_events WHERE occurred_at < ?1",
+        [cutoff],
+    )
+}
+
+#[tauri::command]
+fn retention_policy(state: tauri::State<'_, CollectorState>) -> Result<i64, String> {
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    Ok(retention_days(&database))
+}
+
+/// Saves the retention period and applies it at once; returns the number of events removed.
+#[tauri::command]
+fn update_retention_policy(
+    state: tauri::State<'_, CollectorState>,
+    days: i64,
+) -> Result<usize, String> {
+    if !(0..=3650).contains(&days) {
+        return Err("Durée de conservation invalide.".into());
+    }
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    database
+        .execute("INSERT INTO preferences(key, value) VALUES ('retention_days', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [days])
+        .map_err(|error| error.to_string())?;
+    purge_expired_events(&database, days).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn clear_session_history(state: tauri::State<'_, CollectorState>) -> Result<(), String> {
     let database = state.database.lock().map_err(|error| error.to_string())?;
@@ -302,6 +362,62 @@ fn load_session_events(
         serde_json::from_str(&payload).map_err(|error| error.to_string())
     })
     .collect()
+}
+
+#[derive(Serialize)]
+struct AnalyticsEvents {
+    events: Vec<SessionEvent>,
+    /// Events stored in the window, which may exceed what was returned.
+    total: usize,
+    truncated: bool,
+}
+
+/// Every stored event of a time window (most recent first, capped) for charts and
+/// totals. Prompt and command text are dropped: analytics only need metadata.
+#[tauri::command]
+fn load_analytics_events(
+    state: tauri::State<'_, CollectorState>,
+    since: Option<String>,
+    limit: Option<usize>,
+) -> Result<AnalyticsEvents, String> {
+    let limit = limit.unwrap_or(50_000).clamp(1, 100_000);
+    // Same RFC 3339 shape as the stored `occurred_at`, so text comparison orders correctly.
+    let since = since
+        .map(|value| {
+            chrono::DateTime::parse_from_rfc3339(&value)
+                .map(|time| time.with_timezone(&chrono::Utc).to_rfc3339())
+                .map_err(|error| error.to_string())
+        })
+        .transpose()?;
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    let total: usize = database
+        .query_row(
+            "SELECT count(*) FROM session_events WHERE ?1 IS NULL OR occurred_at >= ?1",
+            params![since],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())? as usize;
+    let mut statement = database
+        .prepare("SELECT payload FROM session_events WHERE ?1 IS NULL OR occurred_at >= ?1 ORDER BY occurred_at DESC, event_id DESC LIMIT ?2")
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![since, limit as i64], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+    let mut events = Vec::new();
+    for row in rows {
+        let payload = row.map_err(|error| error.to_string())?;
+        // A row this version cannot read is skipped rather than failing the whole window.
+        if let Ok(mut event) = serde_json::from_str::<SessionEvent>(&payload) {
+            event.content = None;
+            event.command = None;
+            events.push(event);
+        }
+    }
+    Ok(AnalyticsEvents {
+        truncated: total > events.len(),
+        total,
+        events,
+    })
 }
 
 #[tauri::command]
@@ -365,6 +481,41 @@ fn persist_event(state: &CollectorState, event: SessionEvent) -> bool {
     true
 }
 
+/// Brings the terminal or editor where an agent session runs to the front.
+#[tauri::command]
+async fn focus_agent(
+    state: tauri::State<'_, CollectorState>,
+    provider: String,
+    session_id: String,
+    project_path: Option<String>,
+    lang: Option<String>,
+    launch_host: Option<String>,
+) -> Result<focus::FocusOutcome, String> {
+    focus::set_language(lang.as_deref());
+    let known_pid = state
+        .agent_pids
+        .lock()
+        .ok()
+        .and_then(|pids| pids.get(&session_id).copied());
+    tauri::async_runtime::spawn_blocking(move || {
+        focus::focus_agent(
+            &provider,
+            known_pid,
+            project_path.as_deref(),
+            Some(&session_id),
+            launch_host.as_deref(),
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn reveal_folder(path: String, lang: Option<String>) -> Result<(), String> {
+    focus::set_language(lang.as_deref());
+    focus::reveal_folder(&path)
+}
+
 #[tauri::command]
 fn discover_workspace(path: String) -> Result<workspace::Workspace, String> {
     workspace::discover(&PathBuf::from(path))
@@ -401,7 +552,9 @@ fn repository_snapshot(path: String) -> Result<RepositorySnapshot, String> {
     let (behind, ahead) = git(&["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
         .ok()
         .and_then(|counts| {
-            let mut parts = counts.split_whitespace().map(|part| part.parse::<u32>().ok());
+            let mut parts = counts
+                .split_whitespace()
+                .map(|part| part.parse::<u32>().ok());
             Some((parts.next()??, parts.next()??))
         })
         .map_or((None, None), |(behind, ahead)| (Some(behind), Some(ahead)));
@@ -516,8 +669,88 @@ fn parse_window_commits(log: &str, since: i64, until: i64) -> Vec<WindowCommit> 
         .collect()
 }
 
+/// `POST /v1/events`: events from a custom connector (see `ingest.rs` and docs/CONNECTORS.md).
+async fn receive_custom_events(
+    State(state): State<CollectorState>,
+    request: Request,
+) -> impl IntoResponse {
+    let token = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::to_owned);
+    let connector = token.and_then(|token| {
+        state
+            .database
+            .lock()
+            .ok()
+            .and_then(|database| ingest::connector_for_token(&database, &token))
+    });
+    let Some(connector) = connector else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            axum::Json(
+                json!({ "error": "Jeton inconnu : copie celui du connecteur dans l’onglet Connecteurs." }),
+            ),
+        );
+    };
+    let Ok(body) = axum::body::to_bytes(request.into_body(), 1024 * 1024).await else {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            axum::Json(json!({ "error": "Requête trop grosse (1 Mo maximum)." })),
+        );
+    };
+    let events = match ingest::parse(
+        &body,
+        &connector,
+        state.capture_prompts.load(Ordering::Relaxed),
+        state.capture_commands.load(Ordering::Relaxed),
+    ) {
+        Ok(events) => events,
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(json!({ "error": error })),
+            );
+        }
+    };
+    let accepted = events
+        .into_iter()
+        .filter(|event| persist_event(&state, event.clone()))
+        .count();
+    (StatusCode::OK, axum::Json(json!({ "accepted": accepted })))
+}
+
+#[tauri::command]
+fn list_custom_connectors(
+    state: tauri::State<'_, CollectorState>,
+) -> Result<Vec<ingest::CustomConnector>, String> {
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    ingest::list(&database).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn create_custom_connector(
+    state: tauri::State<'_, CollectorState>,
+    name: String,
+) -> Result<ingest::CustomConnector, String> {
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    ingest::create(&database, &name)
+}
+
+#[tauri::command]
+fn delete_custom_connector(
+    state: tauri::State<'_, CollectorState>,
+    id: String,
+) -> Result<(), String> {
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    ingest::delete(&database, &id)
+}
+
 async fn receive_claude_hook(
     State(state): State<CollectorState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     request: Request,
 ) -> impl IntoResponse {
     let authorized = request
@@ -542,6 +775,24 @@ async fn receive_claude_hook(
     ) else {
         return StatusCode::NO_CONTENT;
     };
+    // The hook request comes from the Claude Code process itself: its client port names it, which
+    // lets "go to the agent" find the right terminal. Looked up once per session, while the
+    // connection is still open.
+    let known = state
+        .agent_pids
+        .lock()
+        .map(|pids| pids.contains_key(&event.session_id))
+        .unwrap_or(true);
+    if !known {
+        let port = peer.port();
+        if let Ok(Some(pid)) =
+            tauri::async_runtime::spawn_blocking(move || focus::pid_for_local_port(port)).await
+        {
+            if let Ok(mut pids) = state.agent_pids.lock() {
+                pids.insert(event.session_id.clone(), pid);
+            }
+        }
+    }
     if !persist_event(&state, event) {
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
@@ -672,6 +923,8 @@ fn normalize_claude_event(
         "PostToolUse" => EventKind::ToolFinished,
         "PostToolUseFailure" => EventKind::ToolFailed,
         "Stop" => EventKind::Checkpoint,
+        // Claude asks for a permission or waits for the user: not the end of a turn.
+        "Notification" => EventKind::Checkpoint,
         "SessionEnd" => EventKind::SessionEnded,
         _ => return None,
     };
@@ -702,6 +955,17 @@ fn normalize_claude_event(
         .get("error")
         .and_then(Value::as_str)
         .map(|_| "failed".to_owned());
+    if event_name == "Notification" {
+        // Claude's own system message ("Claude needs your permission to use Bash"), never user text.
+        let message: String = input
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .chars()
+            .take(160)
+            .collect();
+        event.outcome = Some(format!("attention:{message}"));
+    }
     if event_name == "PostToolUse" && event.tool_name.as_deref() == Some("Agent") {
         let response = input.get("tool_response");
         if let Some(usage) = response.and_then(|value| value.get("usage")) {
@@ -742,7 +1006,17 @@ fn normalize_claude_event(
 
 fn main() {
     tauri::Builder::default()
+        // Must be registered first. A second launch would lose the collector port and
+        // silently observe nothing: bring the running window forward instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             fs::create_dir_all(&config_dir)?;
@@ -755,9 +1029,20 @@ fn main() {
             let data_dir = app.path().app_local_data_dir()?;
             fs::create_dir_all(&data_dir)?;
             let connection = Connection::open(data_dir.join("observer.sqlite3"))?;
-            connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON; CREATE TABLE IF NOT EXISTS session_events (event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, occurred_at TEXT NOT NULL, provider TEXT NOT NULL, kind TEXT NOT NULL, project_path TEXT, payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_session_events_time ON session_events(occurred_at); CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value INTEGER NOT NULL);")?;
+            connection.execute_batch(SCHEMA)?;
+            connection.execute_batch(ingest::TABLE)?;
+            // Old events go first, before anything reads the database.
+            let _ = purge_expired_events(&connection, retention_days(&connection));
             let preference = |key: &str| -> bool {
-                connection.query_row("SELECT value FROM preferences WHERE key=?1", [key], |row| row.get::<_, i64>(0)).optional().ok().flatten().unwrap_or(0) != 0
+                connection
+                    .query_row("SELECT value FROM preferences WHERE key=?1", [key], |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .optional()
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0)
+                    != 0
             };
             let capture_prompts = preference("capture_prompts");
             let capture_commands = preference("capture_commands");
@@ -768,11 +1053,13 @@ fn main() {
                 status: Arc::new(Mutex::new("starting".into())),
                 capture_prompts: Arc::new(AtomicBool::new(capture_prompts)),
                 capture_commands: Arc::new(AtomicBool::new(capture_commands)),
+                agent_pids: Arc::new(Mutex::new(std::collections::HashMap::new())),
             };
             let port = 43821;
             let address = SocketAddr::from(([127, 0, 0, 1], port));
             let router = Router::new()
                 .route("/claude-hook", post(receive_claude_hook))
+                .route("/v1/events", post(receive_custom_events))
                 .route("/cursor-hook", post(receive_cursor_hook))
                 .with_state(state.clone());
             let handle = app.handle().clone();
@@ -780,14 +1067,26 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 match tokio::net::TcpListener::bind(address).await {
                     Ok(listener) => {
-                        if let Ok(mut value) = status.lock() { *value = "listening".into(); }
-                        let _ = axum::serve(listener, router).await;
+                        if let Ok(mut value) = status.lock() {
+                            *value = "listening".into();
+                        }
+                        let _ = axum::serve(
+                            listener,
+                            router.into_make_service_with_connect_info::<SocketAddr>(),
+                        )
+                        .await;
                     }
                     Err(error) => {
-                        if let Ok(mut value) = status.lock() { *value = format!("error: {error}"); }
+                        if let Ok(mut value) = status.lock() {
+                            *value = format!("error: {error}");
+                        }
                         let _ = handle.emit("collector-error", error.to_string());
                     }
                 }
+            });
+            let claude_state = state.clone();
+            claude_transcripts::spawn(claude_transcripts::projects_root(), move |event| {
+                persist_event(&claude_state, event);
             });
             let codex_state = state.clone();
             codex_rollout::spawn(
@@ -824,10 +1123,43 @@ fn main() {
                     persist_event(&opencode_state, event);
                 },
             );
+            let purge_database = state.database.clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(PURGE_INTERVAL);
+                    if let Ok(database) = purge_database.lock() {
+                        let _ = purge_expired_events(&database, retention_days(&database));
+                    }
+                }
+            });
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, export_session_history, repository_snapshot, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, clear_session_history])
+        .invoke_handler(tauri::generate_handler![
+            claude_setup,
+            codex_setup,
+            gemini_setup,
+            opencode_setup,
+            qwen_setup,
+            cursor_setup,
+            load_session_events,
+            load_analytics_events,
+            export_session_history,
+            repository_snapshot,
+            focus_agent,
+            reveal_folder,
+            discover_workspace,
+            resolve_repositories,
+            commits_in_window,
+            collector_status,
+            update_capture_policy,
+            retention_policy,
+            update_retention_policy,
+            list_custom_connectors,
+            create_custom_connector,
+            delete_custom_connector,
+            clear_session_history
+        ])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }
@@ -835,6 +1167,23 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn purges_only_events_older_than_the_retention_period() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(SCHEMA).unwrap();
+        assert_eq!(retention_days(&connection), DEFAULT_RETENTION_DAYS);
+        for (id, age_days) in [("old", 40), ("recent", 2)] {
+            let at = (chrono::Utc::now() - chrono::Duration::days(age_days)).to_rfc3339();
+            connection.execute("INSERT INTO session_events VALUES (?1, 's', ?2, 'codex', 'Checkpoint', NULL, '{}')", params![id, at]).unwrap();
+        }
+        assert_eq!(purge_expired_events(&connection, 0).unwrap(), 0);
+        assert_eq!(purge_expired_events(&connection, 30).unwrap(), 1);
+        let left: String = connection
+            .query_row("SELECT event_id FROM session_events", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(left, "recent");
+    }
 
     #[test]
     fn cursor_tool_and_file_events_exclude_outputs_and_gate_commands() {
@@ -915,6 +1264,18 @@ mod tests {
         assert_eq!(commits[0].subject, "inside: a\u{1f}b");
         assert_eq!(commits[0].author, "Bob");
         assert_eq!(commits[0].committed_at, "1970-01-01T00:02:30+00:00");
+    }
+
+    #[test]
+    fn claude_notification_hook_marks_attention_without_user_text() {
+        let input = json!({ "hook_event_name": "Notification", "session_id": "s", "message": "Claude needs your permission to use Bash", "cwd": "/w" });
+        let event = normalize_claude_event(&input, false, false).unwrap();
+        assert_eq!(event.kind, EventKind::Checkpoint);
+        assert_eq!(
+            event.outcome.as_deref(),
+            Some("attention:Claude needs your permission to use Bash")
+        );
+        assert_eq!(event.content, None);
     }
 
     #[test]

@@ -1,0 +1,303 @@
+# Builds the installers for a version tag and opens a draft GitHub Release.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The tag must match the version in apps/desktop/src-tauri/tauri.conf.json.
+# A manual run (workflow_dispatch) builds the same installers as workflow artifacts
+# without creating a release.
+#
+# Signing is optional and switched on by repository secrets. With none set, macOS
+# builds are ad-hoc signed and Windows builds are unsigned (see README › Install).
+#
+# macOS — Developer ID signing (Tauri imports the certificate into a temporary keychain):
+#   APPLE_CERTIFICATE            base64 of the Developer ID Application .p12
+#   APPLE_CERTIFICATE_PASSWORD   password of that .p12
+#   APPLE_SIGNING_IDENTITY       "Developer ID Application: Name (TEAMID)"
+# macOS — notarization, either an App Store Connect API key (preferred):
+#   APPLE_API_ISSUER             issuer id
+#   APPLE_API_KEY                key id
+#   APPLE_API_KEY_CONTENT        contents of AuthKey_<id>.p8
+# or an Apple ID:
+#   APPLE_ID, APPLE_PASSWORD (app-specific password), APPLE_TEAM_ID
+#
+# Windows — Authenticode signing with a certificate file:
+#   WINDOWS_CERTIFICATE           base64 of the .pfx
+#   WINDOWS_CERTIFICATE_PASSWORD  password of that .pfx
+#   WINDOWS_TIMESTAMP_URL         optional, defaults to DigiCert's timestamp server
+# (For a cloud HSM such as Azure Trusted Signing, replace the thumbprint in the
+# "Configure Windows signing" step by a bundle.windows.signCommand.)
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  DESKTOP_WORKSPACE: "@repo-watcher/agent-observer-desktop"
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - label: macos-x64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+          - label: windows-x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Read the app version
+        id: version
+        shell: bash
+        run: |
+          version="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in tauri.conf.json."
+            exit 1
+          fi
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Type-check and test the UI
+        run: |
+          npm run desktop:typecheck
+          npx vitest run apps/desktop
+
+      # ---------------------------------------------------------------- macOS
+
+      - name: Build the macOS app and dmg
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          # Tauri reacts to these variables being set at all: drop the empty ones.
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                      APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_CONTENT \
+                      APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [[ -n "${!name:-}" ]] || unset "$name"
+          done
+
+          if [[ -n "${APPLE_CERTIFICATE:-}" ]]; then
+            if [[ -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+              echo "::error::APPLE_CERTIFICATE is set but APPLE_SIGNING_IDENTITY is not."
+              exit 1
+            fi
+            echo "Signing with a Developer ID certificate."
+            if [[ -n "${APPLE_API_KEY_CONTENT:-}" ]]; then
+              export APPLE_API_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+              printf '%s' "$APPLE_API_KEY_CONTENT" > "$APPLE_API_KEY_PATH"
+              unset APPLE_API_KEY_CONTENT
+              echo "Notarizing with an App Store Connect API key."
+            elif [[ -n "${APPLE_ID:-}" ]]; then
+              echo "Notarizing with an Apple ID."
+            else
+              echo "::warning::Signed but not notarized: no notarization credentials."
+            fi
+          else
+            # No certificate: ad-hoc signature, so the app runs once Gatekeeper is told to allow it.
+            unset APPLE_API_ISSUER APPLE_API_KEY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+            export APPLE_SIGNING_IDENTITY="-"
+            echo "::notice::No Apple certificate configured: building an unsigned (ad-hoc) app."
+          fi
+
+          npm run tauri --workspace "$DESKTOP_WORKSPACE" -- build --target "$TARGET"
+
+      - name: Collect the macOS installer
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          LABEL: ${{ matrix.label }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(target/"$TARGET"/release/bundle/dmg/*.dmg)
+          if (( ${#dmgs[@]} != 1 )); then
+            echo "::error::Expected exactly one .dmg, found ${#dmgs[@]}."
+            exit 1
+          fi
+          mkdir -p release-assets
+          cp "${dmgs[0]}" "release-assets/Agent-Observer_${VERSION}_${LABEL}.dmg"
+          ls -l release-assets
+
+      # -------------------------------------------------------------- Windows
+
+      - name: Configure Windows signing
+        id: windows-signing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Output "::notice::No Windows certificate configured: building unsigned installers."
+            "config=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item -LiteralPath $pfx
+          $timestamp = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { "http://timestamp.digicert.com" }
+          $config = Join-Path $env:RUNNER_TEMP "windows-signing.json"
+          @{ bundle = @{ windows = @{
+            certificateThumbprint = $certificate.Thumbprint
+            digestAlgorithm = "sha256"
+            timestampUrl = $timestamp
+          } } } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $config -Encoding utf8
+          Write-Output "Signing with certificate $($certificate.Subject)."
+          "config=$config" >> $env:GITHUB_OUTPUT
+
+      - name: Build the NSIS and MSI installers
+        if: runner.os == 'Windows'
+        # bash rather than pwsh: PowerShell would swallow the "--" meant for npm.
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          SIGNING_CONFIG: ${{ steps.windows-signing.outputs.config }}
+        run: |
+          set -euo pipefail
+          signing=()
+          [[ -n "$SIGNING_CONFIG" ]] && signing=(--config "$SIGNING_CONFIG")
+          npm run tauri --workspace "$DESKTOP_WORKSPACE" -- build --target "$TARGET" "${signing[@]}"
+
+      - name: Collect the Windows installers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          LABEL: ${{ matrix.label }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE "target/$env:TARGET/release/bundle"
+          $setup = @(Get-ChildItem -LiteralPath (Join-Path $bundle "nsis") -Filter "*-setup.exe" -File)
+          $msi = @(Get-ChildItem -LiteralPath (Join-Path $bundle "msi") -Filter "*.msi" -File)
+          if ($setup.Count -ne 1 -or $msi.Count -ne 1) {
+            throw "Expected one NSIS setup and one MSI; found $($setup.Count) and $($msi.Count)."
+          }
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Copy-Item -LiteralPath $setup[0].FullName -Destination "release-assets/Agent-Observer_$($env:VERSION)_$($env:LABEL)-setup.exe"
+          Copy-Item -LiteralPath $msi[0].FullName -Destination "release-assets/Agent-Observer_$($env:VERSION)_$($env:LABEL).msi"
+          Get-ChildItem release-assets
+
+      # --------------------------------------------------------------- shared
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-observer-${{ matrix.label }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Draft GitHub Release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: agent-observer-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Write SHA-256 checksums
+        working-directory: release-assets
+        run: |
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          ## Install
+
+          | Platform | File |
+          | --- | --- |
+          | macOS, Apple Silicon | \`Agent-Observer_${VERSION}_macos-arm64.dmg\` |
+          | macOS, Intel | \`Agent-Observer_${VERSION}_macos-x64.dmg\` |
+          | Windows 10/11 (per user, recommended) | \`Agent-Observer_${VERSION}_windows-x64-setup.exe\` |
+          | Windows 10/11 (MSI, managed deployment) | \`Agent-Observer_${VERSION}_windows-x64.msi\` |
+
+          Verify your download against \`SHA256SUMS.txt\`. If this build is not signed yet, see
+          [how to open it on macOS and Windows](https://github.com/${GH_REPO}/blob/main/README.md#install).
+
+          See [CHANGELOG.md](https://github.com/${GH_REPO}/blob/${TAG}/CHANGELOG.md) for the details.
+
+          EOF
+
+          prerelease=()
+          [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists: replacing its assets."
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh release create "$TAG" release-assets/* \
+              --draft \
+              --verify-tag \
+              --title "Agent Observer $TAG" \
+              --notes-file notes.md \
+              --generate-notes \
+              "${prerelease[@]}"
+          fi

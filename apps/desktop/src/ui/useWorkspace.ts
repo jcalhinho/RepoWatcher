@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { readPreference, writePreference } from "./preferences";
 import type { RepositorySnapshot, SessionEvent } from "./types";
 import { pathKey, repositoryForEvent, unresolvedProjectPaths, type Workspace, type WorkspaceRepository } from "./workspace";
 
@@ -12,8 +13,10 @@ const IDLE_REFRESH_MS = 60_000;
 export type RepositoryState = { snapshot: RepositorySnapshot | null; error: string | null };
 
 function readSource() {
+  const stored = readPreference<string | null>("workspace", null, (value): value is string | null => value === null || typeof value === "string");
+  if (stored) return stored;
   try {
-    // A single repository chosen by an older version becomes a one-repository workspace.
+    // Earlier versions stored plain strings, including a single repository chosen before workspaces.
     return window.localStorage.getItem(SOURCE_KEY) ?? window.localStorage.getItem(LEGACY_REPOSITORY_KEY);
   } catch {
     return null;
@@ -34,9 +37,9 @@ export function useWorkspace(events: SessionEvent[]) {
   const resolving = useRef(new Set<string>());
 
   useEffect(() => {
+    writePreference("workspace", source);
     try {
-      if (source) window.localStorage.setItem(SOURCE_KEY, source);
-      else window.localStorage.removeItem(SOURCE_KEY);
+      window.localStorage.removeItem(SOURCE_KEY);
       window.localStorage.removeItem(LEGACY_REPOSITORY_KEY);
     } catch { /* optional preference */ }
     setStates({});

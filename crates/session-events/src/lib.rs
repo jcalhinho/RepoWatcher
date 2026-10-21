@@ -29,10 +29,12 @@ pub enum Provider {
     Continue,
     Aider,
     QwenCode,
+    /// An agent sending its events through the open HTTP API; `SessionEvent.agent` names it.
+    Custom,
 }
 
 impl Provider {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::ClaudeCode,
         Self::Codex,
         Self::Cursor,
@@ -44,6 +46,7 @@ impl Provider {
         Self::Continue,
         Self::Aider,
         Self::QwenCode,
+        Self::Custom,
     ];
 
     pub const fn key(self) -> &'static str {
@@ -59,6 +62,7 @@ impl Provider {
             Self::Continue => "continue",
             Self::Aider => "aider",
             Self::QwenCode => "qwen_code",
+            Self::Custom => "custom",
         }
     }
 }
@@ -109,6 +113,9 @@ pub struct SessionEvent {
     pub session_id: String,
     pub occurred_at: DateTime<Utc>,
     pub provider: Provider,
+    /// Identifier of the custom connector that sent the event (`Provider::Custom` only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
     pub kind: EventKind,
     pub project_path: Option<String>,
     pub project_hash: Option<String>,
@@ -118,6 +125,14 @@ pub struct SessionEvent {
     pub file_path: Option<String>,
     pub input_tokens: Option<Sourced<u64>>,
     pub output_tokens: Option<Sourced<u64>>,
+    /// Prompt tokens served from the provider's cache, reported apart from
+    /// `input_tokens` (which then counts uncached input only). Absent in
+    /// events recorded before these fields existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<Sourced<u64>>,
+    /// Prompt tokens written to the provider's cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<Sourced<u64>>,
     pub duration_ms: Option<Sourced<u64>>,
     pub outcome: Option<String>,
     /// Human-readable content is optional so installations can collect
@@ -133,6 +148,7 @@ impl SessionEvent {
             session_id: session_id.into(),
             occurred_at: Utc::now(),
             provider,
+            agent: None,
             kind,
             project_path: None,
             project_hash: None,
@@ -142,6 +158,8 @@ impl SessionEvent {
             file_path: None,
             input_tokens: None,
             output_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
             duration_ms: None,
             outcome: None,
             content: None,
@@ -161,6 +179,24 @@ mod tests {
             let parsed: Provider = serde_json::from_str(&serialized).unwrap();
             assert_eq!(parsed, provider);
         }
+    }
+
+    #[test]
+    fn events_without_cache_fields_still_deserialize() {
+        let mut event = SessionEvent::new("s", Provider::ClaudeCode, EventKind::ModelUsage);
+        event.cache_read_tokens = Some(Sourced {
+            value: 7,
+            origin: DataOrigin::Provider,
+        });
+        let mut json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        json.as_object_mut().unwrap().remove("cache_read_tokens");
+        let parsed: SessionEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed.cache_read_tokens, None);
+        assert!(
+            !serde_json::to_string(&parsed)
+                .unwrap()
+                .contains("cache_write_tokens")
+        );
     }
 
     #[test]

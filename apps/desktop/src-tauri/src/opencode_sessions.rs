@@ -160,14 +160,7 @@ impl OpenCodeMonitor {
                             usage.occurred_at =
                                 chrono::DateTime::from_timestamp_millis(usage_timestamp_ms)
                                     .unwrap_or(occurred_at);
-                            usage.input_tokens = tokens
-                                .get("input")
-                                .and_then(Value::as_u64)
-                                .map(provider_value);
-                            usage.output_tokens = tokens
-                                .get("output")
-                                .and_then(Value::as_u64)
-                                .map(provider_value);
+                            project_token_usage(tokens, &mut usage);
                             usage.model = message_model.map(provider_string);
                             if usage.input_tokens.is_some() || usage.output_tokens.is_some() {
                                 events.push(usage);
@@ -409,6 +402,7 @@ fn make_event(
     event
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_tool_event(
     path: &Path,
     session_id: &str,
@@ -437,6 +431,29 @@ fn make_tool_event(
     event.command = command;
     event.outcome = Some(outcome.to_owned());
     event
+}
+
+/// OpenCode stores `input` without the cache (`cache.read` / `cache.write`
+/// are apart) and `output` without `reasoning`; its own cost formula bills
+/// `output + reasoning` at the output rate, so they are added (derived).
+fn project_token_usage(tokens: &Value, usage: &mut SessionEvent) {
+    let count = |value: Option<&Value>| value.and_then(Value::as_u64);
+    usage.input_tokens = count(tokens.get("input")).map(provider_value);
+    let cache = tokens.get("cache");
+    usage.cache_read_tokens = count(cache.and_then(|cache| cache.get("read"))).map(provider_value);
+    usage.cache_write_tokens =
+        count(cache.and_then(|cache| cache.get("write"))).map(provider_value);
+    let reasoning = count(tokens.get("reasoning")).unwrap_or(0);
+    usage.output_tokens = count(tokens.get("output")).map(|output| {
+        if reasoning == 0 {
+            provider_value(output)
+        } else {
+            Sourced {
+                value: output + reasoning,
+                origin: DataOrigin::Derived,
+            }
+        }
+    });
 }
 
 fn provider_value(value: u64) -> Sourced<u64> {
@@ -500,6 +517,32 @@ mod tests {
             .expect("create OpenCode schema fixture");
         drop(connection);
         path
+    }
+
+    #[test]
+    fn cache_and_reasoning_tokens_are_kept_apart_from_input() {
+        let tokens = serde_json::json!({
+            "input": 3641, "output": 976, "reasoning": 609,
+            "cache": { "read": 81422, "write": 12 }
+        });
+        let mut usage = SessionEvent::new("ses", Provider::OpenCode, EventKind::ModelUsage);
+        project_token_usage(&tokens, &mut usage);
+
+        assert_eq!(
+            usage.input_tokens.as_ref().map(|value| value.value),
+            Some(3641)
+        );
+        assert_eq!(
+            usage.cache_read_tokens.as_ref().map(|value| value.value),
+            Some(81422)
+        );
+        assert_eq!(
+            usage.cache_write_tokens.as_ref().map(|value| value.value),
+            Some(12)
+        );
+        let output = usage.output_tokens.unwrap();
+        assert_eq!(output.value, 976 + 609);
+        assert_eq!(output.origin, DataOrigin::Derived);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type DependencyList } from "react";
 
-const DIALOG_SELECTOR = ".workspace-modal [role='dialog'], .setup-backdrop [role='dialog']";
+const DIALOG_SELECTOR = ".dialog-backdrop [role='dialog']";
 const FOCUSABLE_SELECTOR = "a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])";
 
 /**
