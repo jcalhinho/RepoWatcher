@@ -1,4 +1,5 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { t } from "./i18n";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { Narration } from "./activity-copy";
@@ -83,7 +84,7 @@ export default function SprintTrack3D({ lanes, reducedMotion }: { lanes: RaceLan
       dpr={[1, 1.75]}
       camera={{ fov: 30, position: [0, 7, 12], near: 0.1, far: 140 }}
       gl={{ antialias: true, alpha: true, powerPreference: "low-power" }}
-      aria-label="Piste 3D de la course des agents"
+      aria-label={t("Piste 3D de la course des agents", "3D track of the agents’ race")}
     >
       <CameraRig leaderX={leaderX} reducedMotion={reducedMotion} />
       <hemisphereLight args={["#e4f5ff", "#6fae5f", 1.25]} />

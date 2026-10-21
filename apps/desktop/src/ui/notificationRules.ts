@@ -1,4 +1,5 @@
 import type { AgentPulse, PulseStatus } from "./agentPulse";
+import { t } from "./i18n";
 
 /** What a notification is about; "loop" and "error" are alerts, shown and sounded differently. */
 export type NoticeKind = "waiting" | "permission" | "stalled" | "error" | "loop";
@@ -13,34 +14,36 @@ export type Notice = {
   target: { provider: string; sessionId: string; projectPath: string | null };
 };
 
-export const NOTICE_KINDS: Array<{ kind: NoticeKind; label: string; hint: string; alert: boolean }> = [
-  { kind: "loop", label: "Un agent tourne en rond", hint: "Il répète les mêmes actions sans avancer.", alert: true },
-  { kind: "error", label: "Erreurs", hint: "Plusieurs actions échouent d’affilée, ou un tour se termine en erreur.", alert: true },
-  { kind: "permission", label: "Validation demandée", hint: "Claude Code attend ton accord pour continuer.", alert: false },
-  { kind: "waiting", label: "Un agent t’attend", hint: "Il a fini son tour et attend ton prochain message.", alert: false },
-  { kind: "stalled", label: "Un agent est silencieux", hint: "Tour en cours mais plus rien depuis 2 minutes.", alert: false }
-];
+export function noticeKinds(): Array<{ kind: NoticeKind; label: string; hint: string; alert: boolean }> {
+  return [
+    { kind: "loop", label: t("Un agent tourne en rond", "An agent goes round in circles"), hint: t("Il répète les mêmes actions sans avancer.", "It repeats the same actions without progress."), alert: true },
+    { kind: "error", label: t("Erreurs", "Errors"), hint: t("Plusieurs actions échouent d’affilée, ou un tour se termine en erreur.", "Several actions fail in a row, or a turn ends in error."), alert: true },
+    { kind: "permission", label: t("Validation demandée", "Approval requested"), hint: t("Claude Code attend ton accord pour continuer.", "Claude Code needs your approval to continue."), alert: false },
+    { kind: "waiting", label: t("Un agent t’attend", "An agent is waiting for you"), hint: t("Il a fini son tour et attend ton prochain message.", "It finished its turn and waits for your next message."), alert: false },
+    { kind: "stalled", label: t("Un agent est silencieux", "An agent went silent"), hint: t("Tour en cours mais plus rien depuis 2 minutes.", "A turn is open but nothing happened for 2 minutes."), alert: false }
+  ];
+}
 
 /** Agents seen recently enough to be worth a notification. */
 const FRESH_MS = 10 * 60_000;
 
 function situation(pulse: AgentPulse): { kind: NoticeKind; detail: string } | null {
-  const permission = pulse.current && /validation|permission/i.test(pulse.current.text) && pulse.status === "waiting";
-  if (pulse.status === "looping") return { kind: "loop", detail: pulse.loop?.evidence ?? "actions répétées sans progrès" };
-  if (pulse.status === "blocked") return { kind: "error", detail: `${pulse.failureStreak} actions en échec d’affilée${pulse.current ? ` — ${pulse.current.text.replace(/^✗\s*/, "")}` : ""}` };
-  if (pulse.current?.tone === "failure" && /interrompu/i.test(pulse.current.text)) return { kind: "error", detail: `tour interrompu${pulse.current.detail ? ` (${pulse.current.detail})` : ""}` };
-  if (permission) return { kind: "permission", detail: pulse.current!.detail ?? "il attend ton accord" };
-  if (pulse.status === "waiting") return { kind: "waiting", detail: pulse.current?.text ?? "tour terminé" };
-  if (pulse.status === "stalled") return { kind: "stalled", detail: pulse.current ? `dernière action : ${pulse.current.text}` : "plus aucune activité" };
+  const permission = pulse.status === "waiting" && pulse.current?.marker === "needs-approval";
+  if (pulse.status === "looping") return { kind: "loop", detail: pulse.loop?.evidence ?? t("actions répétées sans progrès", "repeated actions without progress") };
+  if (pulse.status === "blocked") return { kind: "error", detail: `${t(`${pulse.failureStreak} actions en échec d’affilée`, `${pulse.failureStreak} actions failed in a row`)}${pulse.current ? ` — ${pulse.current.text.replace(/^✗\s*/, "")}` : ""}` };
+  if (pulse.current?.marker === "turn-failed") return { kind: "error", detail: `${t("tour interrompu", "turn interrupted")}${pulse.current.detail ? ` (${pulse.current.detail})` : ""}` };
+  if (permission) return { kind: "permission", detail: pulse.current!.detail ?? t("il attend ton accord", "it needs your approval") };
+  if (pulse.status === "waiting") return { kind: "waiting", detail: pulse.current?.text ?? t("tour terminé", "turn finished") };
+  if (pulse.status === "stalled") return { kind: "stalled", detail: pulse.current ? t(`dernière action : ${pulse.current.text}`, `last action: ${pulse.current.text}`) : t("plus aucune activité", "no more activity") };
   return null;
 }
 
 const TITLES: Record<NoticeKind, (name: string) => string> = {
-  loop: (name) => `⚠ ${name} tourne en rond`,
-  error: (name) => `⚠ ${name} rencontre des erreurs`,
-  permission: (name) => `${name} attend ta validation`,
-  waiting: (name) => `${name} t’attend`,
-  stalled: (name) => `${name} est silencieux`
+  loop: (name) => t(`⚠ ${name} tourne en rond`, `⚠ ${name} is going round in circles`),
+  error: (name) => t(`⚠ ${name} rencontre des erreurs`, `⚠ ${name} keeps failing`),
+  permission: (name) => t(`${name} attend ta validation`, `${name} needs your approval`),
+  waiting: (name) => t(`${name} t’attend`, `${name} is waiting for you`),
+  stalled: (name) => t(`${name} est silencieux`, `${name} went silent`)
 };
 
 /**

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { t } from "./i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, onAction, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { AlertTriangle, ArrowUpRight } from "lucide-react";
@@ -93,10 +94,10 @@ export function NotificationCenter({ events, onGoTo }: { events: SessionEvent[];
 
 function AlertBanner({ pulse, onGoTo }: { pulse: AgentPulse; onGoTo: () => void }) {
   const name = agentName(pulse.key);
-  const text = pulse.status === "looping" ? `${name} tourne en rond : ${pulse.loop?.evidence ?? "actions répétées sans progrès"}.` : `${name} enchaîne les erreurs : ${pulse.failureStreak} actions en échec d’affilée.`;
+  const text = pulse.status === "looping" ? t(`${name} tourne en rond : ${pulse.loop?.evidence ?? "actions répétées sans progrès"}.`, `${name} is going in circles: ${pulse.loop?.evidence ?? "repeated actions without progress"}.`) : t(`${name} enchaîne les erreurs : ${pulse.failureStreak} actions en échec d’affilée.`, `${name} keeps failing: ${pulse.failureStreak} failed actions in a row.`);
   return <div className={`alert-banner ${pulse.status}`}>
     <AlertTriangle size={16} />
     <span>{text}</span>
-    <button className="button small" onClick={onGoTo}><ArrowUpRight size={13} /> Aller à l’agent</button>
+    <button className="button small" onClick={onGoTo}><ArrowUpRight size={13} /> {t("Aller à l’agent", "Go to agent")}</button>
   </div>;
 }

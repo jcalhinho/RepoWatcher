@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Copy, Trash2 } from "lucide-react";
 import { since } from "./AgentCard";
 import { EmptyState, SectionHeader } from "./Explain";
+import { t } from "./i18n";
 import { setCustomProviders } from "./providers";
 import type { SessionEvent } from "./types";
 
@@ -12,7 +13,7 @@ const ENDPOINT = "http://127.0.0.1:43821/v1/events";
 type Language = "curl" | "python" | "node";
 
 function example(language: Language, token: string) {
-  const event = `{"session_id": "ma-session-1", "kind": "tool_started", "tool_name": "bash", "project_path": "/chemin/du/projet"}`;
+  const event = `{"session_id": "my-session-1", "kind": "tool_started", "tool_name": "bash", "project_path": "/path/to/project"}`;
   switch (language) {
     case "curl":
       return `curl -X POST ${ENDPOINT} \\\n  -H "Authorization: Bearer ${token}" \\\n  -H "Content-Type: application/json" \\\n  -d '${event}'`;
@@ -36,7 +37,7 @@ export function CustomConnectors({ events, now }: { events: SessionEvent[]; now:
       setCustomProviders(list);
     } catch {
       setConnectors([]);
-      setError("Disponible seulement dans l’application de bureau.");
+      setError(t("Disponible seulement dans l’application de bureau.", "Only available in the desktop app."));
     }
   }
   useEffect(() => { void refresh(); }, []);
@@ -54,7 +55,7 @@ export function CustomConnectors({ events, now }: { events: SessionEvent[]; now:
   }
 
   async function remove(connector: CustomConnector) {
-    if (!window.confirm(`Supprimer le connecteur « ${connector.name} » ? Son jeton ne fonctionnera plus. Les événements déjà reçus restent dans l’historique.`)) return;
+    if (!window.confirm(t(`Supprimer le connecteur « ${connector.name} » ? Son jeton ne fonctionnera plus. Les événements déjà reçus restent dans l’historique.`, `Delete the “${connector.name}” connector? Its token will stop working. Events already received stay in the history.`))) return;
     await invoke("delete_custom_connector", { id: connector.id });
     await refresh();
   }
@@ -62,16 +63,16 @@ export function CustomConnectors({ events, now }: { events: SessionEvent[]; now:
   return <section className="page-section">
     <SectionHeader
       level={3}
-      title="Connecteurs personnalisés"
-      description="Pour un agent que l’app ne connaît pas encore : crée un connecteur, puis envoie ses événements à l’adresse locale avec son jeton. Il apparaîtra comme les autres agents (carte, course, analyse, notifications)."
-      details="Chaque connecteur a son propre jeton, que tu peux révoquer en le supprimant. Le format des événements (champs, types d’événements, exemples) est décrit dans docs/CONNECTORS.md. Les textes de prompts et les commandes suivent les mêmes réglages de confidentialité que les autres agents."
+      title={t("Connecteurs personnalisés", "Custom connectors")}
+      description={t("Pour un agent que l’app ne connaît pas encore : crée un connecteur, puis envoie ses événements à l’adresse locale avec son jeton. Il apparaîtra comme les autres agents (carte, course, analyse, notifications).", "For an agent the app doesn’t know yet: create a connector, then send its events to the local address with its token. It will show up like the other agents (card, race, analytics, notifications).")}
+      details={t("Chaque connecteur a son propre jeton, que tu peux révoquer en le supprimant. Le format des événements (champs, types d’événements, exemples) est décrit dans docs/CONNECTORS.md. Les textes de prompts et les commandes suivent les mêmes réglages de confidentialité que les autres agents.", "Each connector has its own token, revoked by deleting it. The event format (fields, event kinds, examples) is described in docs/CONNECTORS.md. Prompt text and commands follow the same privacy settings as the other agents.")}
     />
     <form className="custom-connector-form" onSubmit={create}>
-      <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nom de l’agent, ex. « Mon agent maison »" maxLength={40} aria-label="Nom du connecteur" />
-      <button className="button primary" disabled={!name.trim()}>Ajouter un connecteur</button>
+      <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t("Nom de l’agent, ex. « Mon agent maison »", "Agent name, e.g. “My home-made agent”")} maxLength={40} aria-label={t("Nom du connecteur", "Connector name")} />
+      <button className="button primary" disabled={!name.trim()}>{t("Ajouter un connecteur", "Add a connector")}</button>
     </form>
     {error && <p className="notice warn">{error}</p>}
-    {connectors && !connectors.length && !error && <EmptyState title="Aucun connecteur personnalisé">Ajoute-en un si ton agent n’est pas dans la liste ci-dessus.</EmptyState>}
+    {connectors && !connectors.length && !error && <EmptyState title={t("Aucun connecteur personnalisé", "No custom connector")}>{t("Ajoute-en un si ton agent n’est pas dans la liste ci-dessus.", "Add one if your agent is not in the list above.")}</EmptyState>}
     <div className="custom-connector-list">{connectors?.map((connector) => {
       const own = events.filter((event) => event.provider === `custom:${connector.id}`);
       const lastAt = own.length ? Math.max(...own.map((event) => Date.parse(event.occurred_at))) : null;
@@ -91,15 +92,15 @@ function CustomConnectorCard({ connector, lastAt, now, onRemove }: { connector: 
   return <article className="custom-connector" style={{ "--agent-color": connector.color } as CSSProperties}>
     <header>
       <b>{connector.name}</b>
-      <span className="text-muted small">{lastAt === null ? "Aucun événement reçu pour l’instant" : `Dernier événement ${since(lastAt, now)}`}</span>
-      <button className="icon-button" onClick={onRemove} title="Supprimer ce connecteur"><Trash2 size={14} /></button>
+      <span className="text-muted small">{lastAt === null ? t("Aucun événement reçu pour l’instant", "No event received yet") : t(`Dernier événement ${since(lastAt, now)}`, `Last event ${since(lastAt, now)}`)}</span>
+      <button className="icon-button" onClick={onRemove} title={t("Supprimer ce connecteur", "Delete this connector")}><Trash2 size={14} /></button>
     </header>
     <dl className="facts">
-      <div><dt>Adresse</dt><dd><code>POST {ENDPOINT}</code></dd></div>
-      <div><dt>Jeton</dt><dd><code>{connector.token.slice(0, 6)}••••••••</code> <button className="button small" onClick={() => void copy("token", connector.token)}><Copy size={12} /> {copied === "token" ? "Copié" : "Copier"}</button></dd></div>
+      <div><dt>{t("Adresse", "Address")}</dt><dd><code>POST {ENDPOINT}</code></dd></div>
+      <div><dt>{t("Jeton", "Token")}</dt><dd><code>{connector.token.slice(0, 6)}••••••••</code> <button className="button small" onClick={() => void copy("token", connector.token)}><Copy size={12} /> {copied === "token" ? t("Copié", "Copied") : t("Copier", "Copy")}</button></dd></div>
     </dl>
-    <div className="segmented" role="group" aria-label="Langage de l’exemple">{(["curl", "python", "node"] as const).map((value) => <button key={value} aria-pressed={language === value} onClick={() => setLanguage(value)}>{value === "curl" ? "curl" : value === "python" ? "Python" : "Node.js"}</button>)}</div>
+    <div className="segmented" role="group" aria-label={t("Langage de l’exemple", "Example language")}>{(["curl", "python", "node"] as const).map((value) => <button key={value} aria-pressed={language === value} onClick={() => setLanguage(value)}>{value === "curl" ? "curl" : value === "python" ? "Python" : "Node.js"}</button>)}</div>
     <pre className="code-example">{example(language, connector.token)}</pre>
-    <button className="button small" onClick={() => void copy("example", example(language, connector.token))}><Copy size={12} /> {copied === "example" ? "Copié" : "Copier l’exemple"}</button>
+    <button className="button small" onClick={() => void copy("example", example(language, connector.token))}><Copy size={12} /> {copied === "example" ? t("Copié", "Copied") : t("Copier l’exemple", "Copy the example")}</button>
   </article>;
 }

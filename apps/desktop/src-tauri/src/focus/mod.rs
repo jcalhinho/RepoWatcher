@@ -4,12 +4,24 @@
 
 use serde::Serialize;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
+
+/// Language of the messages shown to the user, set by the UI with each request.
+static FRENCH: AtomicBool = AtomicBool::new(false);
+
+pub fn set_language(lang: Option<&str>) {
+    FRENCH.store(lang == Some("fr"), Ordering::Relaxed);
+}
+
+pub(crate) fn tr(fr: &str, en: &str) -> String {
+    if FRENCH.load(Ordering::Relaxed) { fr } else { en }.to_owned()
+}
 
 /// What happened, in words the UI can show as is.
 #[derive(Debug, Serialize, PartialEq)]
@@ -132,7 +144,7 @@ pub fn focus_agent(provider: &str, known_pid: Option<u32>, project: Option<&str>
     let Some(pid) = pid else {
         return FocusOutcome {
             ok: false,
-            message: "Agent introuvable : sa session est sans doute terminée.".into(),
+            message: tr("Agent introuvable : sa session est sans doute terminée.", "Agent not found: its session has probably ended."),
             fallback_folder,
         };
     };
@@ -155,13 +167,13 @@ fn bring_forward(chain: &[ProcInfo], processes: &[ProcInfo], project: Option<&st
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn bring_forward(_chain: &[ProcInfo], _processes: &[ProcInfo], _project: Option<&str>) -> Result<String, String> {
-    Err("Mise au premier plan non prise en charge sur ce système.".into())
+    Err(tr("Mise au premier plan non prise en charge sur ce système.", "Bringing windows forward is not supported on this system."))
 }
 
 /// Opens a folder in Finder / Explorer / the file manager.
 pub fn reveal_folder(path: &str) -> Result<(), String> {
     if !Path::new(path).is_dir() {
-        return Err("Ce dossier n’existe plus.".into());
+        return Err(tr("Ce dossier n’existe plus.", "This folder no longer exists."));
     }
     #[cfg(target_os = "macos")]
     let program = "open";

@@ -474,7 +474,9 @@ async fn focus_agent(
     provider: String,
     session_id: String,
     project_path: Option<String>,
+    lang: Option<String>,
 ) -> Result<focus::FocusOutcome, String> {
+    focus::set_language(lang.as_deref());
     let known_pid = state.agent_pids.lock().ok().and_then(|pids| pids.get(&session_id).copied());
     tauri::async_runtime::spawn_blocking(move || focus::focus_agent(&provider, known_pid, project_path.as_deref()))
         .await
@@ -482,7 +484,8 @@ async fn focus_agent(
 }
 
 #[tauri::command]
-fn reveal_folder(path: String) -> Result<(), String> {
+fn reveal_folder(path: String, lang: Option<String>) -> Result<(), String> {
+    focus::set_language(lang.as_deref());
     focus::reveal_folder(&path)
 }
 

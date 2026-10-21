@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { locale, t } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -59,7 +60,7 @@ export function useObserver() {
   }, [events, loadingOlder, hasMore]);
 
   const clearHistory = useCallback(async () => {
-    if (!window.confirm("Effacer tout l’historique local (événements, prompts et commandes capturés) ? Cette action ne peut pas être annulée.")) return false;
+    if (!window.confirm(t("Effacer tout l’historique local (événements, prompts et commandes capturés) ? Cette action ne peut pas être annulée.", "Erase all local history (events, captured prompts and commands)? This cannot be undone."))) return false;
     await invoke("clear_session_history");
     setEvents([]);
     setHasMore(false);
@@ -69,12 +70,12 @@ export function useObserver() {
   /** Returns a message for the user. */
   const exportHistory = useCallback(async () => {
     try {
-      const path = await save({ title: "Exporter l’historique", defaultPath: "agent-observer-historique.json", filters: [{ name: "JSON", extensions: ["json"] }] });
+      const path = await save({ title: t("Exporter l’historique", "Export history"), defaultPath: t("agent-observer-historique.json", "agent-observer-history.json"), filters: [{ name: "JSON", extensions: ["json"] }] });
       if (!path) return null;
       const count = await invoke<number>("export_session_history", { path });
-      return `${count.toLocaleString("fr-FR")} événements exportés dans ${path}.`;
+      return t(`${count.toLocaleString(locale())} événements exportés dans ${path}.`, `${count.toLocaleString(locale())} events exported to ${path}.`);
     } catch {
-      return "Export impossible ici : ouvre l’application de bureau.";
+      return t("Export impossible ici : ouvre l’application de bureau.", "Export unavailable here: open the desktop app.");
     }
   }, []);
 

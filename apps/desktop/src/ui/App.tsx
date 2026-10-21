@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { t, useLang } from "./i18n";
 import { Activity, CircleHelp, Minimize2 } from "lucide-react";
 import type { AgentPulse } from "./agentPulse";
 import type { AnalyticsRange } from "./analytics";
@@ -28,11 +29,12 @@ import { filterByRepository, pathKey, type RepositoryFilter } from "./workspace"
 import { RepositoryFilterBar, WorkspaceSwitcher, useRepositoryActivity } from "./WorkspaceViews";
 
 type Tab = "overview" | "sessions" | "repositories" | "connectors" | "settings";
-const TABS: Array<[Tab, string]> = [["overview", "Vue d’ensemble"], ["sessions", "Sessions"], ["repositories", "Dépôts"], ["connectors", "Connecteurs"], ["settings", "Réglages"]];
+const tabs = (): Array<[Tab, string]> => [["overview", t("Vue d’ensemble", "Overview")], ["sessions", "Sessions"], ["repositories", t("Dépôts", "Repositories")], ["connectors", t("Connecteurs", "Connectors")], ["settings", t("Réglages", "Settings")]];
 const isTab = oneOf("overview", "sessions", "repositories", "connectors", "settings");
 const isRange = oneOf("15m", "1h", "24h", "all");
 
 export function App() {
+  useLang();
   useAgents();
   useEffect(() => { invoke<CustomConnectorInfo[]>("list_custom_connectors").then(setCustomProviders).catch(() => undefined); }, []);
   const observer = useObserver();
@@ -105,21 +107,21 @@ export function App() {
 
   return <div className="app">
     <header className="app-header">
-      <div className="brand"><span className="brand-mark"><Activity size={17} strokeWidth={2.4} /></span><span><b>Agent Observer</b><small>par RepoWatcher</small></span></div>
+      <div className="brand"><span className="brand-mark"><Activity size={17} strokeWidth={2.4} /></span><span><b>Agent Observer</b><small>{t("par RepoWatcher", "by RepoWatcher")}</small></span></div>
       <WorkspaceSwitcher model={workspace} />
       <div className="header-actions">
         <CollectorStatus state={observer.collectorState} />
-        <button className="button" onClick={goMini} title="Réduire l’app à une colonne dans un coin de l’écran"><Minimize2 size={15} /> Mode mini</button>
-        <button className="button" onClick={() => setHelpOpen(true)}><CircleHelp size={15} /> Aide</button>
+        <button className="button" onClick={goMini} title={t("Réduire l’app à une colonne dans un coin de l’écran", "Shrink the app to a column in a corner of the screen")}><Minimize2 size={15} /> {t("Mode mini", "Mini mode")}</button>
+        <button className="button" onClick={() => setHelpOpen(true)}><CircleHelp size={15} /> {t("Aide", "Help")}</button>
       </div>
     </header>
 
     <nav className="tabs" aria-label="Sections">
-      {TABS.map(([id, label]) => <button key={id} className="tab" aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
+      {tabs().map(([id, label]) => <button key={id} className="tab" aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
         {label}
         {id === "sessions" && sessionCount > 0 && <small>{sessionCount}</small>}
         {id === "repositories" && workspace.repositories.length > 0 && <small>{workspace.repositories.length}</small>}
-        {id === "connectors" && !setup.claudeHooks && <i className="tab-dot" title="Une action est conseillée" />}
+        {id === "connectors" && !setup.claudeHooks && <i className="tab-dot" title={t("Une action est conseillée", "An action is recommended")} />}
       </button>)}
     </nav>
 

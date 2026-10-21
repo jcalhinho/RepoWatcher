@@ -2,7 +2,7 @@
 //! Terminal, a classic console (owned by a `conhost.exe` child of the shell) or an editor window
 //! whose title names the project.
 
-use super::ProcInfo;
+use super::{tr, ProcInfo};
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::core::BOOL;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -50,15 +50,15 @@ pub fn bring_forward(chain: &[ProcInfo], processes: &[ProcInfo], project: Option
     // Prefer the closest host; among its windows, the one whose title names the project.
     search.found.sort_by_key(|(rank, _, title)| (*rank, !search.title_hint.as_ref().is_some_and(|hint| title.to_lowercase().contains(hint))));
     let Some((_, hwnd, title)) = search.found.first().cloned() else {
-        return Err("Fenêtre de l’agent introuvable.".into());
+        return Err(tr("Fenêtre de l’agent introuvable.", "Agent window not found."));
     };
     unsafe {
         if IsIconic(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
         if !SetForegroundWindow(hwnd).as_bool() {
-            return Err("Windows a refusé de mettre la fenêtre au premier plan.".into());
+            return Err(tr("Windows a refusé de mettre la fenêtre au premier plan.", "Windows refused to bring the window to the front."));
         }
     }
-    Ok(format!("Fenêtre « {title} » mise au premier plan."))
+    Ok(tr(&format!("Fenêtre « {title} » mise au premier plan."), &format!("Window “{title}” brought to the front.")))
 }

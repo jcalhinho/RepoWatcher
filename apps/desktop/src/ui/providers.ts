@@ -33,7 +33,7 @@ export const providers: Provider[] = [
   { id: "continue", eventKey: "continue", name: "Continue", initials: "↳", color: "#c0c7d4", surface: "#30343c" },
   { id: "aider", eventKey: "aider", name: "Aider", initials: "A", color: "#f18e8e", surface: "#402727" },
   // Placeholder for the backend key; each custom connector becomes its own provider at runtime.
-  { id: "custom", eventKey: "custom", name: "Connecteur personnalisé", initials: "+", color: "#7d8aa3", surface: "#262b35" }
+  { id: "custom", eventKey: "custom", name: "Custom connector", initials: "+", color: "#7d8aa3", surface: "#262b35" }
 ];
 
 export function providerById(id: string): Provider {

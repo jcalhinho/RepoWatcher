@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { t } from "./i18n";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { isNumber, readPreference, writePreference } from "./preferences";
 
@@ -59,7 +60,7 @@ export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, cla
   }
 
   return <div className={`resizable ${maximized ? "is-maximized" : ""} ${className}`} style={{ "--section-height": `${height}px` } as CSSProperties} aria-label={label}>
-    <button className="resizable-maximize" onClick={() => setMaximized((value) => !value)} aria-pressed={maximized} title={maximized ? "Réduire (Échap)" : "Agrandir en plein écran"} aria-label={maximized ? `Réduire ${label}` : `Agrandir ${label}`}>
+    <button className="resizable-maximize" onClick={() => setMaximized((value) => !value)} aria-pressed={maximized} title={maximized ? t("Réduire (Échap)", "Restore (Esc)") : t("Agrandir en plein écran", "Full screen")} aria-label={maximized ? t(`Réduire ${label}`, `Restore ${label}`) : t(`Agrandir ${label}`, `Maximize ${label}`)}>
       {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
     </button>
     <div className="resizable-body">{children}</div>
@@ -67,12 +68,12 @@ export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, cla
       className="resizable-handle"
       role="separator"
       aria-orientation="horizontal"
-      aria-label={`Redimensionner ${label}`}
+      aria-label={t(`Redimensionner ${label}`, `Resize ${label}`)}
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={Math.round(height)}
       tabIndex={0}
-      title="Glisser pour redimensionner · double-clic pour revenir à la taille par défaut"
+      title={t("Glisser pour redimensionner · double-clic pour revenir à la taille par défaut", "Drag to resize · double-click to reset")}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

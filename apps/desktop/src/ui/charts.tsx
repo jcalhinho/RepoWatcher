@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { locale, t } from "./i18n";
 import type { TimeAxis } from "./analytics";
 
 export type LineSeries = { key: string; label: string; color: string; values: number[] };
@@ -30,8 +31,8 @@ function useSize<T extends HTMLElement>() {
 function timeLabel(time: number, axis: TimeAxis) {
   const date = new Date(time);
   return axis.end - axis.start > 20 * 60 * 60_000
-    ? date.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    ? date.toLocaleString(locale(), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : date.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
 }
 
 /** Multi-series time line chart with a crosshair tooltip; one shared y-axis, never two. */
@@ -62,9 +63,9 @@ export function LineChart({ series, axis, format, unit, emptyText }: { series: L
   return <div className="line-chart">
     {visible.length > 1 && <div className="chart-legend-row">{visible.map((line) => <span key={line.key}><i style={{ background: line.color }} />{line.label}<b>{format(line.values.reduce((sum, value) => sum + value, 0))}</b></span>)}</div>}
     <div className="line-chart-plot" ref={frame}>
-    {visible.length ? <svg width={width} height={height} role="img" aria-label={`${unit} par tranche de temps`}>
+    {visible.length ? <svg width={width} height={height} role="img" aria-label={t(`${unit} par tranche de temps`, `${unit} per time slot`)}>
       {ticks.map((tick) => <g key={tick}><line className="chart-gridline" x1={margin.left} x2={margin.left + plotWidth} y1={y(tick)} y2={y(tick)} /><text className="chart-axis-label" x={margin.left - 7} y={y(tick)} textAnchor="end" dominantBaseline="middle">{format(tick)}</text></g>)}
-      {[0, Math.floor((axis.buckets - 1) / 2), axis.buckets - 1].map((index) => <text key={index} className="chart-axis-label" x={x(index)} y={height - 6} textAnchor={index === 0 ? "start" : index === axis.buckets - 1 ? "end" : "middle"}>{index === axis.buckets - 1 ? "maintenant" : timeLabel(bucketStart(index), axis)}</text>)}
+      {[0, Math.floor((axis.buckets - 1) / 2), axis.buckets - 1].map((index) => <text key={index} className="chart-axis-label" x={x(index)} y={height - 6} textAnchor={index === 0 ? "start" : index === axis.buckets - 1 ? "end" : "middle"}>{index === axis.buckets - 1 ? t("maintenant", "now") : timeLabel(bucketStart(index), axis)}</text>)}
       {visible.map((line) => <polyline key={line.key} className="chart-line" points={line.values.map((value, index) => `${x(index)},${y(value)}`).join(" ")} style={{ stroke: line.color }} />)}
       {hover !== null && <g className="chart-crosshair"><line x1={x(hover)} x2={x(hover)} y1={margin.top} y2={margin.top + plotHeight} />{visible.map((line) => <circle key={line.key} cx={x(hover)} cy={y(line.values[hover])} r={4} style={{ fill: line.color }} />)}</g>}
       <rect className="chart-hit" x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} onPointerMove={onMove} onPointerLeave={() => setHover(null)} />
@@ -74,7 +75,7 @@ export function LineChart({ series, axis, format, unit, emptyText }: { series: L
       {tooltipRows.map(({ line, value }) => <span key={line.key}><i style={{ background: line.color }} />{line.label}<em>{format(value)} {unit}</em></span>)}
     </div>}
     </div>
-    {visible.length > 0 && <table className="sr-only"><caption>{unit} par tranche</caption><thead><tr><th>Début</th>{visible.map((line) => <th key={line.key}>{line.label}</th>)}</tr></thead><tbody>{Array.from({ length: axis.buckets }, (_, index) => <tr key={index}><td>{timeLabel(bucketStart(index), axis)}</td>{visible.map((line) => <td key={line.key}>{line.values[index]}</td>)}</tr>)}</tbody></table>}
+    {visible.length > 0 && <table className="sr-only"><caption>{t(`${unit} par tranche`, `${unit} per slot`)}</caption><thead><tr><th>{t("Début", "Start")}</th>{visible.map((line) => <th key={line.key}>{line.label}</th>)}</tr></thead><tbody>{Array.from({ length: axis.buckets }, (_, index) => <tr key={index}><td>{timeLabel(bucketStart(index), axis)}</td>{visible.map((line) => <td key={line.key}>{line.values[index]}</td>)}</tr>)}</tbody></table>}
   </div>;
 }
 

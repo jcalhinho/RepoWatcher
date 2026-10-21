@@ -1,4 +1,5 @@
 import { Maximize2, Pin, PinOff } from "lucide-react";
+import { t } from "./i18n";
 import { AgentCard } from "./AgentCard";
 import { useMemo } from "react";
 import { agentPulse, sortPulses, type AgentPulse } from "./agentPulse";
@@ -21,18 +22,18 @@ export function MiniView({ agentEvents, collectorState, pinned, onTogglePin, onE
     <header className="mini-header">
       <div className="mini-title">
         <CollectorStatus state={collectorState} compact />
-        <span><b>{working}</b> au travail{attention ? <> · <em>{attention} à voir</em></> : null}</span>
+        <span><b>{working}</b> {t("au travail", "working")}{attention ? <> · <em>{t(`${attention} à voir`, `${attention} to check`)}</em></> : null}</span>
       </div>
       <div className="mini-actions">
-        <button className="icon-button" onClick={onTogglePin} aria-pressed={pinned} title={pinned ? "La fenêtre reste au premier plan — cliquer pour l’en retirer" : "Garder la fenêtre au premier plan"}>{pinned ? <Pin size={15} /> : <PinOff size={15} />}</button>
-        <button className="icon-button" onClick={onExpand} title="Revenir au tableau de bord complet"><Maximize2 size={15} /></button>
+        <button className="icon-button" onClick={onTogglePin} aria-pressed={pinned} title={pinned ? t("La fenêtre reste au premier plan — cliquer pour l’en retirer", "The window stays on top — click to release it") : t("Garder la fenêtre au premier plan", "Keep the window on top")}>{pinned ? <Pin size={15} /> : <PinOff size={15} />}</button>
+        <button className="icon-button" onClick={onExpand} title={t("Revenir au tableau de bord complet", "Back to the full dashboard")}><Maximize2 size={15} /></button>
       </div>
     </header>
     <div className="mini-cards">
       {seen.length
         ? seen.map((pulse) => <AgentCard key={pulse.key} pulse={pulse} now={now} repository={repositoryName(pulse)} compact onGoTo={onGoTo} />)
-        : <p className="mini-empty">Aucun agent observé pour l’instant. Lance une session avec Claude Code, Codex, Gemini CLI, OpenCode ou Qwen Code : elle apparaîtra ici.</p>}
+        : <p className="mini-empty">{t("Aucun agent observé pour l’instant. Lance une session avec Claude Code, Codex, Gemini CLI, OpenCode ou Qwen Code : elle apparaîtra ici.", "No agent observed yet. Start a session with Claude Code, Codex, Gemini CLI, OpenCode or Qwen Code: it will show up here.")}</p>}
     </div>
-    {unseen.length > 0 && <footer className="mini-footer">Pas encore vus : {unseen.map((pulse) => agentName(pulse.key)).join(", ")}</footer>}
+    {unseen.length > 0 && <footer className="mini-footer">{t("Pas encore vus", "Not seen yet")} : {unseen.map((pulse) => agentName(pulse.key)).join(", ")}</footer>}
   </div>;
 }

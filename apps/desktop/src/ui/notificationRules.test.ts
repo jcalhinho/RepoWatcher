@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setLang } from "./i18n";
 import type { AgentPulse } from "./agentPulse";
 import { notices } from "./notificationRules";
 
@@ -12,6 +13,8 @@ function pulse(status: AgentPulse["status"], extra: Partial<AgentPulse> = {}): A
     project: { project_path: "/w", file_path: null, project_hash: null }, spark: [], ...extra
   };
 }
+
+beforeAll(() => setLang("fr"));
 
 describe("notification rules", () => {
   it("notifies once when an agent starts waiting, and again after a new turn", () => {
@@ -38,7 +41,7 @@ describe("notification rules", () => {
   });
 
   it("tells a permission request apart from a finished turn", () => {
-    const asking = pulse("waiting", { current: { id: "e2", at: now, text: "Attend ta validation", detail: "Claude needs your permission to use Bash", tone: "info" } });
+    const asking = pulse("waiting", { current: { id: "e2", at: now, text: "Attend ta validation", detail: "Claude needs your permission to use Bash", tone: "info", marker: "needs-approval" } });
     expect(notices([asking], new Map(), names, now).send[0]).toMatchObject({ kind: "permission", title: "Codex attend ta validation" });
   });
 });

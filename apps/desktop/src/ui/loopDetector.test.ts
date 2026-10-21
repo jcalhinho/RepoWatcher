@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setLang } from "./i18n";
 import { detectLoop } from "./loopDetector";
 import type { SessionEvent } from "./types";
 
@@ -8,6 +9,8 @@ function event(kind: string, extra: Partial<SessionEvent> = {}): SessionEvent {
   return { event_id: `e${clock}`, session_id: "s", occurred_at: new Date(clock).toISOString(), provider: "codex", kind, project_path: "/w", tool_name: null, file_path: null, ...extra };
 }
 const call = (tool: string, file?: string, failed = false) => [event("tool_started", { tool_name: tool, file_path: file ?? null }), event(failed ? "tool_failed" : "tool_finished", { tool_name: tool, file_path: file ?? null })];
+
+beforeAll(() => setLang("fr"));
 
 describe("loop detection", () => {
   it("ignores normal varied work", () => {

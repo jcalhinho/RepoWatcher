@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { currentLang, t } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
 
 type FocusOutcome = { ok: boolean; message: string; fallback_folder: string | null };
@@ -11,9 +12,9 @@ export function useFocusAgent() {
   const goTo = useCallback(async (target: { provider: string; sessionId: string; projectPath: string | null; agentName: string }) => {
     let outcome: FocusOutcome;
     try {
-      outcome = await invoke<FocusOutcome>("focus_agent", { provider: target.provider, sessionId: target.sessionId, projectPath: target.projectPath });
+      outcome = await invoke<FocusOutcome>("focus_agent", { provider: target.provider, sessionId: target.sessionId, projectPath: target.projectPath, lang: currentLang() });
     } catch {
-      outcome = { ok: false, message: "Disponible seulement dans l’application de bureau.", fallback_folder: null };
+      outcome = { ok: false, message: t("Disponible seulement dans l’application de bureau.", "Only available in the desktop app."), fallback_folder: null };
     }
     const id = Date.now();
     setToast({ ...outcome, id, agent: target.agentName });
@@ -22,7 +23,7 @@ export function useFocusAgent() {
 
   const revealFolder = useCallback(async (path: string) => {
     try {
-      await invoke("reveal_folder", { path });
+      await invoke("reveal_folder", { path, lang: currentLang() });
       setToast(null);
     } catch (error) {
       setToast((current) => current && { ...current, message: String(error), fallback_folder: null });

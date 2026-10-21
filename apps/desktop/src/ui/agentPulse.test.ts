@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setLang } from "./i18n";
 import { agentPulse, sortPulses } from "./agentPulse";
 import type { SessionEvent } from "./types";
 
@@ -9,6 +10,8 @@ function event(kind: string, secondsAgo: number, extra: Partial<SessionEvent> = 
   counter += 1;
   return { event_id: `e${counter}`, session_id: "s1", occurred_at: new Date(now - secondsAgo * 1000).toISOString(), provider: "qwen_code", kind, project_path: "/work/demo", tool_name: null, file_path: null, ...extra };
 }
+
+beforeAll(() => setLang("fr"));
 
 describe("agent pulse for the mini view", () => {
   it("is working while a turn is open and events keep coming", () => {

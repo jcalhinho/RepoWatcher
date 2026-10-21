@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { locale, t } from "./i18n";
 import { narrateEvent } from "./activity-copy";
 import { providerFor } from "./providers";
 import type { SessionEvent } from "./types";
@@ -33,9 +34,9 @@ export const EventRow = memo(function EventRow({ event, showDate = false }: { ev
   const narration = narrateEvent(event);
   const at = new Date(event.occurred_at);
   return <div className={`event-row tone-${narration?.tone ?? "info"}`}>
-    <time dateTime={event.occurred_at} title={at.toLocaleString("fr-FR")}>{showDate ? at.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : at.toLocaleTimeString("fr-FR")}</time>
+    <time dateTime={event.occurred_at} title={at.toLocaleString(locale())}>{showDate ? at.toLocaleString(locale(), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : at.toLocaleTimeString(locale())}</time>
     <span className="event-agent"><i style={{ background: provider?.color }} />{provider?.name ?? event.provider}</span>
     <span className="event-text">{narration ? <>{narration.text}{narration.detail && <small>{narration.detail}</small>}</> : event.kind.replaceAll("_", " ")}</span>
-    <details className="event-raw"><summary>données brutes</summary><pre>{JSON.stringify(event, null, 2)}</pre></details>
+    <details className="event-raw"><summary>{t("données brutes", "raw data")}</summary><pre>{JSON.stringify(event, null, 2)}</pre></details>
   </div>;
 });

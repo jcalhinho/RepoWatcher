@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { SessionEvent } from "./types";
 
 /** Evidence that an agent repeats itself without making progress. */
@@ -31,7 +32,7 @@ function recentCalls(events: SessionEvent[]): Call[] {
     const isCall = hasStarts ? event.kind === "tool_started" : event.kind === "tool_finished" || event.kind === "tool_failed";
     if (isCall) {
       const target = shortTarget(event);
-      const tool = event.tool_name ?? "outil";
+      const tool = event.tool_name ?? t("outil", "tool");
       calls.push({ signature: `${tool.toLowerCase()}|${target}`, label: target ? `${tool} ${target}` : tool, failed: event.kind === "tool_failed", writes: WRITE_TOOL.test(tool) ? target || null : null });
     } else if (event.kind === "tool_failed" && calls.length) {
       calls[calls.length - 1].failed = true;
@@ -59,7 +60,7 @@ export function detectLoop(events: SessionEvent[]): LoopFinding | null {
   }
   for (const entry of counts.values()) {
     if (entry.count >= 6 || (entry.count >= 4 && entry.failed >= 2)) {
-      return { reason: "repeat", evidence: `« ${entry.label} » répété ${entry.count} fois${entry.failed ? `, dont ${entry.failed} en échec` : ""}` };
+      return { reason: "repeat", evidence: t(`« ${entry.label} » répété ${entry.count} fois${entry.failed ? `, dont ${entry.failed} en échec` : ""}`, `“${entry.label}” repeated ${entry.count} times${entry.failed ? `, ${entry.failed} failed` : ""}`) };
     }
   }
 
@@ -71,7 +72,7 @@ export function detectLoop(events: SessionEvent[]): LoopFinding | null {
     const distinct = new Set(tail.slice(0, period)).size;
     if (distinct > 1 && tail.every((signature, index) => index < period || signature === tail[index - period])) {
       const cycle = calls.slice(-period).map((call) => call.label).join(" → ");
-      return { reason: "cycle", evidence: `même enchaînement 3 fois de suite : ${cycle}` };
+      return { reason: "cycle", evidence: t(`même enchaînement 3 fois de suite : ${cycle}`, `same sequence 3 times in a row: ${cycle}`) };
     }
   }
 
@@ -79,7 +80,7 @@ export function detectLoop(events: SessionEvent[]): LoopFinding | null {
   for (const call of calls) if (call.writes) edits.set(call.writes, (edits.get(call.writes) ?? 0) + 1);
   const failures = calls.filter((call) => call.failed).length;
   for (const [file, count] of edits) {
-    if (count >= 5 && failures >= 2) return { reason: "edit-fail", evidence: `${file} modifié ${count} fois alors que ${failures} actions échouent` };
+    if (count >= 5 && failures >= 2) return { reason: "edit-fail", evidence: t(`${file} modifié ${count} fois alors que ${failures} actions échouent`, `${file} edited ${count} times while ${failures} actions fail`) };
   }
   return null;
 }

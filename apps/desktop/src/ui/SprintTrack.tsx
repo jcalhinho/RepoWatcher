@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
 import type { AgentPulse } from "./agentPulse";
-import { STATUS_INFO } from "./AgentCard";
+import { statusInfo } from "./AgentCard";
+import { t } from "./i18n";
 import { deriveRaceState, isTurnComplete } from "./race";
 import type { RaceLane } from "./SprintTrack3D";
 import { oneOf, usePreference } from "./preferences";
@@ -32,16 +33,16 @@ export function SprintTrack({ events, pulses, liveEventIds, onGoTo }: { events: 
     const isLiveEvent = Boolean(state.latest && liveEventIds[provider.eventKey] === state.latest.event_id && now - Date.parse(state.latest.occurred_at) < 8_000);
     const bubble = pulse?.current && now - pulse.current.at < BUBBLE_MAX_AGE_MS ? pulse.current : null;
     const cue: RaceLane["cue"] = state.latest?.kind === "tool_failed" ? "fall" : state.latest?.kind === "session_ended" || (state.latest?.kind === "checkpoint" && isTurnComplete(provider.eventKey, state.latest)) ? "finish" : "leap";
-    return { provider, state, isLiveEvent, cue, bubble, pulse, label: STATUS_INFO[pulse?.status ?? "never"].label };
+    return { provider, state, isLiveEvent, cue, bubble, pulse, label: statusInfo(pulse?.status ?? "never").label };
   });
 
   return <div className={`race race-${mode}`}>
-    <div className="segmented" role="group" aria-label="Rendu de la course">
-      {(["3d", "2d"] as const).map((value) => <button key={value} aria-pressed={mode === value} onClick={() => setMode(value)}>{value === "3d" ? "3D" : "2D (plus léger)"}</button>)}
+    <div className="segmented" role="group" aria-label={t("Rendu de la course", "Race view")}>
+      {(["3d", "2d"] as const).map((value) => <button key={value} aria-pressed={mode === value} onClick={() => setMode(value)}>{value === "3d" ? "3D" : t("2D (plus léger)", "2D (lighter)")}</button>)}
     </div>
     {mode === "3d"
-      ? <Resizable id="race-stage" defaultHeight={400} min={220} max={1200} label="la course">
-          <div className="race-stage"><Suspense fallback={<div className="race-loading">Chargement du stade…</div>}>
+      ? <Resizable id="race-stage" defaultHeight={400} min={220} max={1200} label={t("la course", "the race")}>
+          <div className="race-stage"><Suspense fallback={<div className="race-loading">{t("Chargement du stade…", "Loading the stadium…")}</div>}>
             <SprintTrack3D reducedMotion={reducedMotion} lanes={lanes.map(({ provider, state, isLiveEvent, cue, bubble, pulse }) => ({ id: provider.id, name: provider.name, color: provider.color, status: state.status, progress: state.progress, cue, cueKey: isLiveEvent && state.latest ? state.latest.event_id : null, bubble, mood: pulse?.status ?? "never", onSelect: pulse?.session && onGoTo ? () => onGoTo(pulse) : undefined }))} />
           </Suspense></div>
         </Resizable>
@@ -60,7 +61,7 @@ export function SprintTrack({ events, pulses, liveEventIds, onGoTo }: { events: 
             </div>;
           })}
         </div>}
-    <p className="race-legend"><span><i className="legend-leap" />saute : nouvelle action</span><span><i className="legend-fall" />tombe : outil en échec</span><span><i className="legend-finish" />franchit la ligne : tour terminé</span><span><i className="legend-loop" />tourne en rond : boucle</span><span><i className="legend-wait" />lève la main : t’attend</span><span>La distance montre l’activité récente, pas l’avancement réel de la tâche.</span></p>
+    <p className="race-legend"><span><i className="legend-leap" />{t("saute : nouvelle action", "jumps: new action")}</span><span><i className="legend-fall" />{t("tombe : outil en échec", "falls: failed tool")}</span><span><i className="legend-finish" />{t("franchit la ligne : tour terminé", "crosses the line: turn finished")}</span><span><i className="legend-loop" />{t("tourne en rond : boucle", "runs in circles: loop")}</span><span><i className="legend-wait" />{t("lève la main : t’attend", "raises a hand: waiting for you")}</span><span>{t("La distance montre l’activité récente, pas l’avancement réel de la tâche.", "Distance shows recent activity, not real task progress.")}</span></p>
   </div>;
 }
 

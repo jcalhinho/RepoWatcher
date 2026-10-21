@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setLang } from "./i18n";
 import { narrateEvent } from "./activity-copy";
 
 const describeAgentAction = (event: Parameters<typeof narrateEvent>[0]) => narrateEvent(event)?.text ?? null;
+
+beforeAll(() => setLang("fr"));
 
 describe("human-readable agent narration", () => {
   it("names the file an agent reads or edits, keeping only the end of the path", () => {
