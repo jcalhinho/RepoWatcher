@@ -240,6 +240,8 @@ a { color: var(--accent); }
 .legend-leap { background: var(--accent); }
 .legend-fall { background: var(--bad); }
 .legend-finish { background: var(--good); }
+.legend-loop { background: var(--loop); }
+.legend-wait { background: var(--accent); }
 
 /* ---------- Charts ---------- */
 .chart-grid { display: grid; gap: var(--space-3); height: 100%; }

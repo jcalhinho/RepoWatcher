@@ -63,9 +63,9 @@ export function OverviewPage({ agentEvents, events, analyticsEvents, analytics, 
       <SectionHeader
         title={<span id="race-title">La course</span>}
         description="La même activité en image : chaque agent court quand il agit. Pratique pour voir d’un coup d’œil qui travaille."
-        details="Un coureur saute à chaque nouvelle action, trébuche quand un outil échoue et franchit la ligne quand un tour se termine. Sa bulle reprend l’action affichée sur sa carte. La distance reflète l’activité récente, pas l’avancement de la tâche."
+        details="Un coureur saute à chaque nouvelle action, trébuche quand un outil échoue et franchit la ligne quand un tour se termine. Il tourne en rond quand l’agent boucle, lève la main quand il t’attend, s’assoit quand il est silencieux et se courbe sous un ⚠ quand il est bloqué. Clique sur un coureur pour aller à l’agent. Sa bulle reprend l’action affichée sur sa carte. La distance reflète l’activité récente, pas l’avancement de la tâche."
       />
-      <SprintTrack events={events} pulses={pulseByKey} liveEventIds={liveEventIds} />
+      <SprintTrack events={events} pulses={pulseByKey} liveEventIds={liveEventIds} onGoTo={onGoTo} />
     </section>
 
     <SessionAnalytics events={analyticsEvents} range={range} onRange={onRange} dataset={analytics} repositoryOf={repositoryOf} />

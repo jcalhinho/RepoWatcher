@@ -20,7 +20,7 @@ const isTrackMode = oneOf("3d", "2d");
  * The race: each agent is a runner that moves forward when it acts, trips on a failed tool and
  * crosses the line when a turn ends. Bubbles repeat the action shown on the agent cards.
  */
-export function SprintTrack({ events, pulses, liveEventIds }: { events: SessionEvent[]; pulses: Map<string, AgentPulse>; liveEventIds: Record<string, string> }) {
+export function SprintTrack({ events, pulses, liveEventIds, onGoTo }: { events: SessionEvent[]; pulses: Map<string, AgentPulse>; liveEventIds: Record<string, string>; onGoTo?: (pulse: AgentPulse) => void }) {
   // The race advances with elapsed time, so only this panel ticks every second.
   const now = useNow(1000);
   const [mode, setMode] = usePreference("race-mode", supportsWebGL() ? "3d" : "2d", isTrackMode);
@@ -31,7 +31,7 @@ export function SprintTrack({ events, pulses, liveEventIds }: { events: SessionE
     const isLiveEvent = Boolean(state.latest && liveEventIds[provider.eventKey] === state.latest.event_id && now - Date.parse(state.latest.occurred_at) < 8_000);
     const bubble = pulse?.current && now - pulse.current.at < BUBBLE_MAX_AGE_MS ? pulse.current : null;
     const cue: RaceLane["cue"] = state.latest?.kind === "tool_failed" ? "fall" : state.latest?.kind === "session_ended" || (state.latest?.kind === "checkpoint" && isTurnComplete(provider.eventKey, state.latest)) ? "finish" : "leap";
-    return { provider, state, isLiveEvent, cue, bubble, label: STATUS_INFO[pulse?.status ?? "never"].label };
+    return { provider, state, isLiveEvent, cue, bubble, pulse, label: STATUS_INFO[pulse?.status ?? "never"].label };
   });
 
   return <div className={`race race-${mode}`}>
@@ -41,7 +41,7 @@ export function SprintTrack({ events, pulses, liveEventIds }: { events: SessionE
     {mode === "3d"
       ? <Resizable id="race-stage" defaultHeight={400} min={220} max={1200} label="la course">
           <div className="race-stage"><Suspense fallback={<div className="race-loading">Chargement du stade…</div>}>
-            <SprintTrack3D reducedMotion={reducedMotion} lanes={lanes.map(({ provider, state, isLiveEvent, cue, bubble }) => ({ id: provider.id, name: provider.name, color: provider.color, status: state.status, progress: state.progress, cue, cueKey: isLiveEvent && state.latest ? state.latest.event_id : null, bubble }))} />
+            <SprintTrack3D reducedMotion={reducedMotion} lanes={lanes.map(({ provider, state, isLiveEvent, cue, bubble, pulse }) => ({ id: provider.id, name: provider.name, color: provider.color, status: state.status, progress: state.progress, cue, cueKey: isLiveEvent && state.latest ? state.latest.event_id : null, bubble, mood: pulse?.status ?? "never", onSelect: pulse?.session && onGoTo ? () => onGoTo(pulse) : undefined }))} />
           </Suspense></div>
         </Resizable>
       : <div className="race-lanes">
@@ -59,7 +59,7 @@ export function SprintTrack({ events, pulses, liveEventIds }: { events: SessionE
             </div>;
           })}
         </div>}
-    <p className="race-legend"><span><i className="legend-leap" />saute : nouvelle action</span><span><i className="legend-fall" />tombe : outil en échec</span><span><i className="legend-finish" />franchit la ligne : tour terminé</span><span>La distance montre l’activité récente, pas l’avancement réel de la tâche.</span></p>
+    <p className="race-legend"><span><i className="legend-leap" />saute : nouvelle action</span><span><i className="legend-fall" />tombe : outil en échec</span><span><i className="legend-finish" />franchit la ligne : tour terminé</span><span><i className="legend-loop" />tourne en rond : boucle</span><span><i className="legend-wait" />lève la main : t’attend</span><span>La distance montre l’activité récente, pas l’avancement réel de la tâche.</span></p>
   </div>;
 }
 
