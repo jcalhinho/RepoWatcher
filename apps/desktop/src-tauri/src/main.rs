@@ -102,6 +102,23 @@ struct RepositoryCommit {
     relative_time: String,
 }
 
+#[derive(Debug, PartialEq, Serialize)]
+struct WindowCommit {
+    id: String,
+    short_id: String,
+    subject: String,
+    author: String,
+    committed_at: String,
+}
+
+#[derive(Serialize)]
+struct WindowCommits {
+    commits: Vec<WindowCommit>,
+    truncated: bool,
+}
+
+const WINDOW_COMMIT_LIMIT: usize = 100;
+
 #[tauri::command]
 fn claude_setup(state: tauri::State<'_, CollectorState>) -> ClaudeSetup {
     let endpoint = "http://127.0.0.1:43821/claude-hook".to_owned();
@@ -385,6 +402,74 @@ fn repository_snapshot(path: String) -> Result<RepositorySnapshot, String> {
         changed_files,
         recent_commits,
     })
+}
+
+/// Commits whose committer date falls inside `[since, until]`. Git's
+/// `--since/--until` prune the walk; the exact bound is re-checked here on the
+/// committer timestamp. Being in the window does not attribute a commit to an
+/// agent.
+#[tauri::command]
+fn commits_in_window(path: String, since: String, until: String) -> Result<WindowCommits, String> {
+    let root = PathBuf::from(&path);
+    if !root.is_dir() {
+        return Err("Le chemin sélectionné n’est pas un dossier.".into());
+    }
+    let parse = |value: &str| {
+        chrono::DateTime::parse_from_rfc3339(value)
+            .map(|date| date.with_timezone(&chrono::Utc))
+            .map_err(|_| format!("Date invalide : {value}"))
+    };
+    let (since, until) = (parse(&since)?, parse(&until)?);
+    if since > until {
+        return Err("La fenêtre de session est inversée.".into());
+    }
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .arg("log")
+        .arg("--all")
+        .arg(format!("--since={}", since.timestamp()))
+        .arg(format!("--until={}", until.timestamp() + 1))
+        .arg(format!("--max-count={}", WINDOW_COMMIT_LIMIT + 1))
+        .arg("--date-order")
+        .arg("--pretty=format:%H%x1f%h%x1f%ct%x1f%an%x1f%s")
+        .output()
+        .map_err(|error| format!("Git n’est pas disponible : {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    let mut commits = parse_window_commits(
+        &String::from_utf8_lossy(&output.stdout),
+        since.timestamp(),
+        until.timestamp(),
+    );
+    let truncated = commits.len() > WINDOW_COMMIT_LIMIT;
+    commits.truncate(WINDOW_COMMIT_LIMIT);
+    Ok(WindowCommits { commits, truncated })
+}
+
+fn parse_window_commits(log: &str, since: i64, until: i64) -> Vec<WindowCommit> {
+    log.lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(5, '\u{1f}');
+            let id = parts.next()?.to_owned();
+            let short_id = parts.next()?.to_owned();
+            let timestamp = parts.next()?.parse::<i64>().ok()?;
+            let author = parts.next()?.to_owned();
+            let subject = parts.next()?.to_owned();
+            if timestamp < since || timestamp > until {
+                return None;
+            }
+            let committed_at = chrono::DateTime::from_timestamp(timestamp, 0)?.to_rfc3339();
+            Some(WindowCommit {
+                id,
+                short_id,
+                subject,
+                author,
+                committed_at,
+            })
+        })
+        .collect()
 }
 
 async fn receive_claude_hook(
@@ -689,7 +774,7 @@ fn main() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, cursor_setup, load_session_events, export_session_history, repository_snapshot, collector_status, update_capture_policy, clear_session_history])
+        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, cursor_setup, load_session_events, export_session_history, repository_snapshot, commits_in_window, collector_status, update_capture_policy, clear_session_history])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }
@@ -757,6 +842,26 @@ mod tests {
             ended.duration_ms.as_ref().map(|value| value.value),
             Some(2000)
         );
+    }
+
+    #[test]
+    fn window_commits_keep_only_commits_inside_the_bounds() {
+        let log = "aaa\u{1f}a1\u{1f}100\u{1f}Ada\u{1f}before\n\
+                   bbb\u{1f}b2\u{1f}150\u{1f}Bob\u{1f}inside: a\u{1f}b\n\
+                   ccc\u{1f}c3\u{1f}200\u{1f}Cy\u{1f}on the edge\n\
+                   ddd\u{1f}d4\u{1f}201\u{1f}Di\u{1f}after\n\
+                   malformed line";
+        let commits = parse_window_commits(log, 150, 200);
+        assert_eq!(
+            commits
+                .iter()
+                .map(|commit| commit.short_id.as_str())
+                .collect::<Vec<_>>(),
+            ["b2", "c3"]
+        );
+        assert_eq!(commits[0].subject, "inside: a\u{1f}b");
+        assert_eq!(commits[0].author, "Bob");
+        assert_eq!(commits[0].committed_at, "1970-01-01T00:02:30+00:00");
     }
 
     #[test]
