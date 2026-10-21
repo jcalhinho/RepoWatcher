@@ -1,0 +1,48 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "rust"]
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      # The Tauri crates and the @tauri-apps packages must move together.
+      tauri:
+        patterns: ["tauri", "tauri-*"]
+      rust-minor-and-patch:
+        update-types: ["minor", "patch"]
+        exclude-patterns: ["tauri", "tauri-*"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "javascript"]
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      tauri:
+        patterns: ["@tauri-apps/*"]
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom", "@react-three/*", "three", "@types/three"]
+      npm-minor-and-patch:
+        update-types: ["minor", "patch"]
+        exclude-patterns: ["@tauri-apps/*", "react", "react-dom", "@types/react", "@types/react-dom", "@react-three/*", "three", "@types/three"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      actions:
+        patterns: ["*"]

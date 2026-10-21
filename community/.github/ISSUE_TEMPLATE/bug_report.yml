@@ -1,0 +1,131 @@
+name: Bug report
+description: Something does not work as described.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+        **Security problem?** Do not file it here — follow [SECURITY.md](https://github.com/jcalhinho/agent-observer/blob/main/SECURITY.md).
+        **Before posting logs or screenshots**, remove prompts, commands, file paths or tokens you do not want to make public.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start Agent Observer
+        2. Run `codex` in a repository of the workspace
+        3. …
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Agent Observer version
+      description: The version in the installer file name, or the commit if you built from source.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows 11
+        - Windows 10
+        - Linux (built from source)
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: "macOS 15.5 / Windows 11 24H2 / Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Release installer (.dmg)
+        - Release installer (.exe setup)
+        - Release installer (.msi)
+        - Built from source
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agents
+    attributes:
+      label: Agent(s) involved
+      multiple: true
+      options:
+        - Claude Code
+        - Codex
+        - Gemini CLI
+        - OpenCode
+        - Qwen Code
+        - None / not agent-specific
+        - Other (connector via the local HTTP API)
+    validations:
+      required: true
+
+  - type: input
+    id: agent-version
+    attributes:
+      label: Agent version(s)
+      description: For example the output of `claude --version`, `codex --version`, `gemini --version`.
+      placeholder: "claude 2.3.1, codex 0.48.0"
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Agent cards / statuses
+        - Mini mode
+        - Race
+        - Analytics / tokens / cost
+        - Workspaces / repositories
+        - Sessions / export
+        - Connectors tab / setup
+        - Settings / retention
+        - Installation / launch
+        - Other
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots or exported events
+      description: |
+        Error messages, a screenshot, or the relevant events from *Sessions → Journal complet*.
+        Remember to redact anything private.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I removed private information from what I posted.
+          required: true
