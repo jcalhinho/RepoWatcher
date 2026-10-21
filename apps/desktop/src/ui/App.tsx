@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { MiniView } from "./MiniView";
 import { useWorkspace } from "./useWorkspace";
+import { useAnalyticsEvents } from "./useAnalyticsEvents";
+import type { AnalyticsRange } from "./analytics";
 import { filterByRepository, pathKey, type RepositoryFilter, type WorkspaceRepository } from "./workspace";
 import { RepositoryFilterBar, WorkspacePanel, WorkspaceSwitcher, useRepositoryActivity } from "./WorkspaceViews";
 import { enterMiniWindow, leaveMiniWindow, setMiniPinned } from "./miniWindow";
@@ -65,12 +67,29 @@ export function App() {
     }).then((stop) => { unlisten = stop; });
     return () => { window.clearInterval(timer); unlisten?.(); unlistenError?.(); };
   }, []);
-  const workspace = useWorkspace(events);
+  const [analyticsRange, setAnalyticsRangeState] = useState<AnalyticsRange>(() => {
+    try {
+      const stored = window.localStorage.getItem("repowatcher.analytics-range");
+      return stored === "15m" || stored === "1h" || stored === "24h" || stored === "all" ? stored : "24h";
+    } catch {
+      return "24h";
+    }
+  });
+  function setAnalyticsRange(range: AnalyticsRange) {
+    setAnalyticsRangeState(range);
+    try { window.localStorage.setItem("repowatcher.analytics-range", range); } catch { /* optional preference */ }
+  }
+  const [miniMode, setMiniMode] = useState(() => readFlag("repowatcher.mini-mode", false));
+  const [miniPinned, setMiniPinnedState] = useState(() => readFlag("repowatcher.mini-pinned", true));
+  const narrowWindow = useNarrowWindow();
+  // Charts, repository counts and the mini view read every stored event of the window, not only the 500 kept in memory.
+  const analytics = useAnalyticsEvents(miniMode || narrowWindow ? "24h" : analyticsRange, events);
+  const workspace = useWorkspace(analytics.events);
   const [repositoryFilter, setRepositoryFilterState] = useState<RepositoryFilter>(() => { try { return window.localStorage.getItem("repowatcher.repository-filter") ?? "all"; } catch { return "all"; } });
   // A filter on a repository that left the workspace falls back to every repository.
   const activeFilter: RepositoryFilter = repositoryFilter === "all" || repositoryFilter === "outside" || workspace.repositories.some((repository) => pathKey(repository.path) === pathKey(repositoryFilter)) ? repositoryFilter : "all";
   const scopedEvents = useMemo(() => filterByRepository(events, activeFilter, workspace.repositoryOf), [events, activeFilter, workspace.repositoryOf]);
-  const { activity: repositoryActivity, outside: outsideEvents } = useRepositoryActivity(events, workspace);
+  const { activity: repositoryActivity, outside: outsideEvents } = useRepositoryActivity(analytics.events, workspace);
   function setRepositoryFilter(filter: RepositoryFilter) {
     setRepositoryFilterState(filter);
     try { window.localStorage.setItem("repowatcher.repository-filter", filter); } catch { /* optional preference */ }
@@ -94,9 +113,7 @@ export function App() {
     };
   }, [events]);
 
-  const [miniMode, setMiniMode] = useState(() => readFlag("repowatcher.mini-mode", false));
-  const [miniPinned, setMiniPinnedState] = useState(() => readFlag("repowatcher.mini-pinned", true));
-  const narrowWindow = useNarrowWindow();
+  const scopedAnalytics = useMemo(() => filterByRepository(analytics.events, activeFilter, workspace.repositoryOf), [analytics.events, activeFilter, workspace.repositoryOf]);
   useEffect(() => {
     // Re-apply the corner placement when the app starts in mini mode.
     if (miniMode) void enterMiniWindow(miniPinned);
@@ -179,8 +196,9 @@ export function App() {
     }
   }
 
+
   if (miniMode || narrowWindow) {
-    return <MiniView events={events} collectorState={collectorState} pinned={miniPinned} onTogglePin={toggleMiniPin} onExpand={leaveMini} repositoryName={(project) => workspace.repositoryOf(project)?.name ?? null} />;
+    return <MiniView events={analytics.events} collectorState={collectorState} pinned={miniPinned} onTogglePin={toggleMiniPin} onExpand={leaveMini} repositoryName={(project) => workspace.repositoryOf(project)?.name ?? null} />;
   }
 
   return (
@@ -195,10 +213,10 @@ export function App() {
 
         <div className="page-content">
           <section>
-          <RepositoryFilterBar model={workspace} filter={activeFilter} onFilter={setRepositoryFilter} activity={repositoryActivity} outside={outsideEvents} total={events.length} />
+          <RepositoryFilterBar model={workspace} filter={activeFilter} onFilter={setRepositoryFilter} activity={repositoryActivity} outside={outsideEvents} total={analytics.events.length} />
           <SprintTrack events={scopedEvents} liveEventIds={liveEventIds} />
 
-          <SessionAnalytics events={scopedEvents} repositoryOf={workspace.repositories.length && activeFilter === "all" ? workspace.repositoryOf : undefined} />
+          <SessionAnalytics events={scopedAnalytics} range={analyticsRange} onRange={setAnalyticsRange} dataset={analytics} repositoryOf={workspace.repositories.length && activeFilter === "all" ? workspace.repositoryOf : undefined} />
 
           <Resizable id="activity-connectors" defaultHeight={320} min={160} max={1400} label="l’activité récente et les connecteurs">
           <section className="content-grid">

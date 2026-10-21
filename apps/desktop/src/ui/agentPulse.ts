@@ -118,7 +118,7 @@ export function agentPulse(key: string, events: SessionEvent[], now: number): Ag
       turns: summary.turns.count,
       toolCalls: summary.tools.reduce((sum, tool) => sum + tool.count, 0),
       failures: summary.failures.count,
-      inputTokens: summary.tokens?.input ?? null,
+      inputTokens: summary.tokens && (summary.tokens.input !== null || summary.tokens.cacheRead !== null || summary.tokens.cacheWrite !== null) ? (summary.tokens.input ?? 0) + (summary.tokens.cacheRead ?? 0) + (summary.tokens.cacheWrite ?? 0) : null,
       outputTokens: summary.tokens?.output ?? null,
       filesChanged: new Set(sessionEvents.filter((event) => event.file_path && (event.kind === "file_changed" || (event.kind === "tool_started" && WRITE_TOOL.test(event.tool_name || "")))).map((event) => event.file_path)).size,
       cost: summary.cost && summary.cost.unpricedEvents === 0 ? summary.cost.value : null,

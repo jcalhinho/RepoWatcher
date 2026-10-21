@@ -9,6 +9,8 @@ type ActivityEvent = {
   model?: { value: string } | null;
   input_tokens?: { value: number } | null;
   output_tokens?: { value: number } | null;
+  cache_read_tokens?: { value: number } | null;
+  cache_write_tokens?: { value: number } | null;
   duration_ms?: { value: number } | null;
 };
 
@@ -98,7 +100,8 @@ export function narrateEvent(event: ActivityEvent): Narration | null {
     case "file_changed":
       return { text: event.file_path ? `A modifié ${displayPath(event.file_path)}` : "A modifié un fichier", detail: null, tone: "success" };
     case "model_usage": {
-      const input = event.input_tokens?.value;
+      const cached = (event.cache_read_tokens?.value ?? 0) + (event.cache_write_tokens?.value ?? 0);
+      const input = event.input_tokens || cached ? (event.input_tokens?.value ?? 0) + cached : undefined;
       const output = event.output_tokens?.value;
       const tokens = [input !== undefined ? `${compact(input)} tokens lus` : null, output !== undefined ? `${compact(output)} écrits` : null].filter(Boolean).join(" · ");
       return { text: "Réfléchit avec le modèle", detail: [event.model?.value, tokens, duration].filter(Boolean).join(" · ") || null, tone: "work" };

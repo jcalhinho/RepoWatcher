@@ -20,6 +20,8 @@ export type SummaryEvent = {
   model?: SourcedValue<string> | null;
   input_tokens?: SourcedValue<number> | null;
   output_tokens?: SourcedValue<number> | null;
+  cache_read_tokens?: SourcedValue<number> | null;
+  cache_write_tokens?: SourcedValue<number> | null;
   duration_ms?: SourcedValue<number> | null;
   outcome?: string | null;
 };
@@ -32,8 +34,11 @@ export type FileTouch = { path: string; events: number; changed: boolean; tools:
 export type ModelSeen = { name: string; origins: string[]; events: number };
 
 export type TokenTotals = {
+  /** Uncached input when the connector reports cache tokens apart, all input otherwise. */
   input: number | null;
   output: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
   origins: string[];
   usageEvents: number;
 };
@@ -152,23 +157,21 @@ function collectFiles(events: SummaryEvent[], projectPath: string | null): FileT
 }
 
 function sumTokens(events: SummaryEvent[]): TokenTotals | null {
-  let input: number | null = null;
-  let output: number | null = null;
+  const totals = { input: null as number | null, output: null as number | null, cacheRead: null as number | null, cacheWrite: null as number | null };
   let usageEvents = 0;
   const origins = new Set<string>();
+  const fields = [["input", "input_tokens"], ["output", "output_tokens"], ["cacheRead", "cache_read_tokens"], ["cacheWrite", "cache_write_tokens"]] as const;
   for (const event of events) {
-    if (!event.input_tokens && !event.output_tokens) continue;
+    if (!fields.some(([, field]) => event[field])) continue;
     usageEvents += 1;
-    if (event.input_tokens) {
-      input = (input ?? 0) + event.input_tokens.value;
-      origins.add(event.input_tokens.origin);
-    }
-    if (event.output_tokens) {
-      output = (output ?? 0) + event.output_tokens.value;
-      origins.add(event.output_tokens.origin);
+    for (const [total, field] of fields) {
+      const value = event[field];
+      if (!value) continue;
+      totals[total] = (totals[total] ?? 0) + value.value;
+      origins.add(value.origin);
     }
   }
-  return usageEvents ? { input, output, origins: [...origins].sort(), usageEvents } : null;
+  return usageEvents ? { ...totals, origins: [...origins].sort(), usageEvents } : null;
 }
 
 function collectModels(events: SummaryEvent[]): ModelSeen[] {
@@ -200,19 +203,23 @@ export function estimateCost(events: SummaryEvent[], prices: ModelPrice[] = MODE
   const unpricedModels = new Set<string>();
   const used = new Map<string, ModelPrice>();
   for (const event of events) {
-    if (!event.input_tokens && !event.output_tokens) continue;
+    if (!event.input_tokens && !event.output_tokens && !event.cache_read_tokens && !event.cache_write_tokens) continue;
     const price = event.model?.value ? findModelPrice(event.model.value, prices) : null;
     const input = event.input_tokens?.value;
     const output = event.output_tokens?.value;
-    const withinBaseRate = price?.baseRateMaxInputTokens === undefined || (input ?? 0) <= price.baseRateMaxInputTokens;
-    if (!price || input === undefined || output === undefined || !withinBaseRate) {
+    const cacheRead = event.cache_read_tokens?.value ?? 0;
+    const cacheWrite = event.cache_write_tokens?.value ?? 0;
+    // The long-context threshold counts every prompt token of the request, cached or not.
+    const withinBaseRate = price?.baseRateMaxInputTokens === undefined || (input ?? 0) + cacheRead + cacheWrite <= price.baseRateMaxInputTokens;
+    const cachePriced = (!cacheRead || price?.cacheReadPerMTok !== undefined) && (!cacheWrite || price?.cacheWritePerMTok !== undefined);
+    if (!price || input === undefined || output === undefined || !withinBaseRate || !cachePriced) {
       unpricedEvents += 1;
-      unpricedInputTokens += input ?? 0;
+      unpricedInputTokens += (input ?? 0) + cacheRead + cacheWrite;
       unpricedOutputTokens += output ?? 0;
       unpricedModels.add(event.model?.value || "modèle non fourni");
       continue;
     }
-    value += (input * price.inputPerMTok + output * price.outputPerMTok) / 1_000_000;
+    value += (input * price.inputPerMTok + output * price.outputPerMTok + cacheRead * (price.cacheReadPerMTok ?? 0) + cacheWrite * (price.cacheWritePerMTok ?? 0)) / 1_000_000;
     pricedEvents += 1;
     used.set(price.label, price);
   }

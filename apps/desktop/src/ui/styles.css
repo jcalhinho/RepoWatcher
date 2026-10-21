@@ -655,3 +655,5 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .mini-repo { margin-top: -3px; overflow: hidden; color: #aab4c6; font: 11px/1.3 Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .bottom-grid .insight-panel { grid-column: 1 / -1; }
 @media (max-width: 1250px) { .workspace-row { grid-template-columns: minmax(140px, 2fr) minmax(80px, 1fr) 66px 70px minmax(80px, 1fr) 88px 86px; }.workspace-row > :nth-child(6) { display: none; } }
+.analytics-scope { margin: 3px 0 0; color: #6f7a8c; font-size: 11px; }
+.analytics-scope.warn { color: #ffcf6e; }

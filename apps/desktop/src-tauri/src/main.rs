@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod claude_transcripts;
 mod codex_rollout;
 mod gemini_sessions;
 mod opencode_sessions;
@@ -302,6 +303,58 @@ fn load_session_events(
         serde_json::from_str(&payload).map_err(|error| error.to_string())
     })
     .collect()
+}
+
+#[derive(Serialize)]
+struct AnalyticsEvents {
+    events: Vec<SessionEvent>,
+    /// Events stored in the window, which may exceed what was returned.
+    total: usize,
+    truncated: bool,
+}
+
+/// Every stored event of a time window (most recent first, capped) for charts and
+/// totals. Prompt and command text are dropped: analytics only need metadata.
+#[tauri::command]
+fn load_analytics_events(
+    state: tauri::State<'_, CollectorState>,
+    since: Option<String>,
+    limit: Option<usize>,
+) -> Result<AnalyticsEvents, String> {
+    let limit = limit.unwrap_or(50_000).clamp(1, 100_000);
+    // Same RFC 3339 shape as the stored `occurred_at`, so text comparison orders correctly.
+    let since = since
+        .map(|value| {
+            chrono::DateTime::parse_from_rfc3339(&value)
+                .map(|time| time.with_timezone(&chrono::Utc).to_rfc3339())
+                .map_err(|error| error.to_string())
+        })
+        .transpose()?;
+    let database = state.database.lock().map_err(|error| error.to_string())?;
+    let total: usize = database
+        .query_row(
+            "SELECT count(*) FROM session_events WHERE ?1 IS NULL OR occurred_at >= ?1",
+            params![since],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())? as usize;
+    let mut statement = database
+        .prepare("SELECT payload FROM session_events WHERE ?1 IS NULL OR occurred_at >= ?1 ORDER BY occurred_at DESC, event_id DESC LIMIT ?2")
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![since, limit as i64], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+    let mut events = Vec::new();
+    for row in rows {
+        let payload = row.map_err(|error| error.to_string())?;
+        // A row this version cannot read is skipped rather than failing the whole window.
+        if let Ok(mut event) = serde_json::from_str::<SessionEvent>(&payload) {
+            event.content = None;
+            event.command = None;
+            events.push(event);
+        }
+    }
+    Ok(AnalyticsEvents { truncated: total > events.len(), total, events })
 }
 
 #[tauri::command]
@@ -789,6 +842,10 @@ fn main() {
                     }
                 }
             });
+            let claude_state = state.clone();
+            claude_transcripts::spawn(claude_transcripts::projects_root(), move |event| {
+                persist_event(&claude_state, event);
+            });
             let codex_state = state.clone();
             codex_rollout::spawn(
                 codex_rollout::sessions_root(),
@@ -827,7 +884,7 @@ fn main() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, export_session_history, repository_snapshot, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, clear_session_history])
+        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, load_analytics_events, export_session_history, repository_snapshot, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, clear_session_history])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }

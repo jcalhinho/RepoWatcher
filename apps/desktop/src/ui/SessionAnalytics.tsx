@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   RANGE_LABELS, bucketSeries, eventsInRange, formatCompact, formatDuration, modelsUsed, timeAxis, toolCallsByAgent,
   tokensByAgent, topFiles, topTools, totalTokens, turnDurations, type AnalyticsRange
@@ -8,6 +8,7 @@ import { Resizable } from "./Resizable";
 import { chartProviders, providers } from "./providers";
 import { sessionKey, type SessionEvent } from "./types";
 import type { WorkspaceRepository } from "./workspace";
+import type { AnalyticsDataset } from "./useAnalyticsEvents";
 import { useNow } from "./useNow";
 
 // Status and neutral colors: never reused for an agent identity.
@@ -22,12 +23,16 @@ const nameOf = (key: string) => byKey.get(key)?.name ?? key;
 const colorOf = (key: string) => byKey.get(key)?.color ?? SINGLE_SERIES;
 const shortPath = (path: string) => path.replaceAll("\\", "/").split("/").filter(Boolean).slice(-2).join("/");
 
-export function SessionAnalytics({ events, repositoryOf }: { events: SessionEvent[]; /** Set when a multi-repository workspace is shown unfiltered. */ repositoryOf?: (event: SessionEvent) => WorkspaceRepository | null }) {
+export function SessionAnalytics({ events, range, onRange, dataset, repositoryOf }: {
+  events: SessionEvent[];
+  range: AnalyticsRange;
+  onRange: (range: AnalyticsRange) => void;
+  /** How complete `events` is for the window. */
+  dataset: AnalyticsDataset;
+  /** Set when a multi-repository workspace is shown unfiltered. */
+  repositoryOf?: (event: SessionEvent) => WorkspaceRepository | null;
+}) {
   const now = useNow(10_000);
-  const [chosen, setChosen] = useState<AnalyticsRange | null>(null);
-  // Until the user picks a window, show the last hour when it has activity, otherwise all loaded history.
-  const hasRecent = events.some((event) => now - Date.parse(event.occurred_at) < 60 * 60_000);
-  const range: AnalyticsRange = chosen ?? (hasRecent || !events.length ? "1h" : "all");
 
   const data = useMemo(() => {
     const axis = timeAxis(events, range, now);
@@ -100,8 +105,8 @@ export function SessionAnalytics({ events, repositoryOf }: { events: SessionEven
 
   return <section className="analytics-panel" aria-labelledby="analytics-title">
     <div className="analytics-heading">
-      <div><h2 id="analytics-title">Analyse des sessions</h2><p>{summary}</p></div>
-      <div className="range-filter" role="group" aria-label="Période analysée">{(Object.keys(RANGE_LABELS) as AnalyticsRange[]).map((key) => <button key={key} className={key === range ? "selected" : ""} aria-pressed={key === range} onClick={() => setChosen(key)}>{RANGE_LABELS[key]}</button>)}</div>
+      <div><h2 id="analytics-title">Analyse des sessions</h2><p>{summary}</p>{dataset.truncated ? <p className="analytics-scope warn">Période limitée aux {formatCompact(dataset.events.length)} événements les plus récents sur {formatCompact(dataset.total)} enregistrés : choisis une période plus courte pour des totaux complets.</p> : dataset.source === "loaded" ? <p className="analytics-scope warn">Calculé sur les événements chargés à l’écran seulement (aperçu sans base locale).</p> : <p className="analytics-scope">Calculé sur toute la base locale pour cette période.</p>}</div>
+      <div className="range-filter" role="group" aria-label="Période analysée">{(Object.keys(RANGE_LABELS) as AnalyticsRange[]).map((key) => <button key={key} className={key === range ? "selected" : ""} aria-pressed={key === range} onClick={() => onRange(key)}>{RANGE_LABELS[key]}</button>)}</div>
     </div>
     <Resizable id="analytics-lines" defaultHeight={300} min={180} max={1000} label="les courbes d’activité et de tokens">
     <div className="analytics-lines">

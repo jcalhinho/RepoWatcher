@@ -13,6 +13,9 @@ export type SessionEvent = {
   content?: string | null;
   input_tokens?: { value: number; origin: string } | null;
   output_tokens?: { value: number; origin: string } | null;
+  /** Cached prompt tokens, reported apart from `input_tokens` (Claude Code transcripts). */
+  cache_read_tokens?: { value: number; origin: string } | null;
+  cache_write_tokens?: { value: number; origin: string } | null;
   model?: { value: string; origin: string } | null;
   duration_ms?: { value: number; origin: string } | null;
   outcome?: string | null;

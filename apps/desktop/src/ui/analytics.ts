@@ -47,7 +47,9 @@ export function bucketSeries(events: SessionEvent[], providerKeys: string[], axi
   return providerKeys.map((key) => ({ key, values: rows.get(key)! }));
 }
 
-export const totalTokens = (event: SessionEvent) => (event.input_tokens?.value || 0) + (event.output_tokens?.value || 0);
+/** Prompt tokens the model read, cached or not. */
+export const promptTokens = (event: SessionEvent) => (event.input_tokens?.value || 0) + (event.cache_read_tokens?.value || 0) + (event.cache_write_tokens?.value || 0);
+export const totalTokens = (event: SessionEvent) => promptTokens(event) + (event.output_tokens?.value || 0);
 
 export type AgentToolCalls = { key: string; succeeded: number; failed: number };
 
@@ -102,7 +104,7 @@ export function tokensByAgent(events: SessionEvent[], providerKeys: string[]): A
     const own = events.filter((event) => event.provider === key);
     return {
       key,
-      input: own.reduce((sum, event) => sum + (event.input_tokens?.value || 0), 0),
+      input: own.reduce((sum, event) => sum + promptTokens(event), 0),
       output: own.reduce((sum, event) => sum + (event.output_tokens?.value || 0), 0)
     };
   }).filter((row) => row.input + row.output > 0);

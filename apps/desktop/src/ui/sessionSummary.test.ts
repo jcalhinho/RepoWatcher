@@ -83,7 +83,7 @@ describe("session summary", () => {
       event("codex", "model_usage", 5, { model: provider("gpt-5-codex"), input_tokens: provider(2_000) }),
       event("codex", "tool_finished", 6, { tool_name: "shell" })
     ])!;
-    expect(summary.tokens).toEqual({ input: 3_000, output: 100, origins: ["provider"], usageEvents: 2 });
+    expect(summary.tokens).toEqual({ input: 3_000, output: 100, cacheRead: null, cacheWrite: null, origins: ["provider"], usageEvents: 2 });
     expect(summary.models).toEqual([{ name: "gpt-5-codex", origins: ["provider"], events: 2 }]);
     // gpt-5-codex has no verified price in the table: no cost at all.
     expect(summary.cost).toBeNull();
@@ -97,6 +97,15 @@ describe("session summary", () => {
 });
 
 describe("estimated cost", () => {
+  it("prices Claude cache reads and writes at the published cache rates", () => {
+    const cost = estimateCost([
+      event("claude_code", "model_usage", 0, { model: provider("claude-opus-5-5"), input_tokens: provider(1_000_000), output_tokens: provider(0), cache_read_tokens: provider(10_000_000), cache_write_tokens: provider(1_000_000) })
+    ])!;
+    // Opus 5.5: 4 $ input → 0.4 $ cache read and 5 $ cache write per million.
+    expect(cost.value).toBeCloseTo(4 + 10 * 0.4 + 5, 10);
+    expect(cost.unpricedEvents).toBe(0);
+  });
+
   it("prices each event with its own model and flags the estimate", () => {
     const cost = estimateCost([
       event("claude_code", "tool_finished", 0, { model: provider("claude-sonnet-4-6"), input_tokens: provider(1_000_000), output_tokens: provider(100_000) }),
