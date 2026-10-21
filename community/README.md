@@ -55,7 +55,7 @@ has consumed so far.
 Shrinks the app to a single always-visible column in a corner of the screen, one compact
 card per agent, with an optional "keep on top" pin.
 
-<!-- GIF: docs/media/mini-mode.gif — switching to mini mode, an agent turning to "Waiting for you" -->
+<img src="docs/media/mini-mode.png" alt="Mini mode: a column of agent cards" width="320">
 
 ### The race
 
@@ -64,17 +64,18 @@ hop, a failed tool makes it fall and get back up, the end of a turn sends it to 
 line. A speech bubble narrates what it is doing. Distance is an activity indicator, never a
 completion percentage. Respects the system's *reduced motion* setting.
 
-<!-- GIF: docs/media/race.gif — two agents racing, one falling on a failed command -->
+<img src="docs/media/race.png" alt="The 3D race: agents running, one raising a hand because it waits for you" width="900">
 
 ### Analytics
 
 Event rate, tool calls and failures, input / output / cache tokens per agent and per model,
 over 15 minutes, 1 hour, 24 hours or the whole stored history. An **estimated** cost is
 shown for models with a published price in [`pricing.ts`](apps/desktop/src/ui/pricing.ts)
-(currently Claude models only) — always labelled as an estimate, never as a bill.
+(Claude, GPT/Codex, Gemini, Qwen and more) — always shown as “≈ $ at API price”, never as a bill.
+If you use an agent through a subscription, a per-agent setting relabels the amount as *value consumed*.
 When an agent doesn't report a value, the app says *not provided* instead of guessing.
 
-<!-- Screenshot: docs/media/analytics.png -->
+<img src="docs/media/analytics.png" alt="Analytics: tools, files, tokens and turn durations per agent" width="900">
 
 ### Workspaces
 
@@ -85,7 +86,7 @@ feed to one repository. The repositories table shows branch, ahead/behind, uncom
 changes, agents seen and last activity side by side. Repositories are read, never written,
 and Git changes are **never attributed to an agent** without evidence.
 
-<!-- Screenshot: docs/media/workspace.png -->
+<img src="docs/media/workspace.png" alt="Repositories table: branch, sync state and agent activity side by side" width="900">
 
 ### Sessions
 
@@ -94,7 +95,7 @@ failures, tokens, estimated cost, commits made in the session's time window) and
 event timeline. Page through older events, export the whole local history as JSON, or erase
 it.
 
-<!-- Screenshot: docs/media/sessions.png -->
+<img src="docs/media/sessions.png" alt="Sessions: summary and timeline" width="900">
 
 ## Supported agents
 

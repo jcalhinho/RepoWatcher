@@ -55,7 +55,7 @@ ce que la session a consommé.
 Réduit l’app à une colonne toujours visible dans un coin de l’écran, une carte compacte par
 agent, avec une épingle « garder au premier plan ».
 
-<!-- GIF : docs/media/mini-mode.gif -->
+<img src="docs/media/mini-mode.png" alt="Mini mode: a column of agent cards" width="320">
 
 ### La course
 
@@ -64,15 +64,16 @@ fait sauter, un outil en échec le fait tomber puis se relever, la fin d’un to
 l’arrivée. Une bulle raconte ce qu’il fait. La distance est un indicateur d’activité, jamais
 un pourcentage d’avancement. Le réglage système *réduire les animations* est respecté.
 
-<!-- GIF : docs/media/race.gif -->
+<img src="docs/media/race.png" alt="The 3D race: agents running, one raising a hand because it waits for you" width="900">
 
 ### Analyse
 
 Rythme d’événements, appels d’outils et échecs, tokens lus / écrits / en cache par agent et
 par modèle, sur 15 minutes, 1 heure, 24 heures ou tout l’historique. Un coût **estimé** est
 affiché pour les modèles dont le prix public figure dans
-[`pricing.ts`](apps/desktop/src/ui/pricing.ts) (pour l’instant les modèles Claude), toujours
-présenté comme une estimation, jamais comme une facture. Quand un agent ne fournit pas une
+[`pricing.ts`](apps/desktop/src/ui/pricing.ts) (Claude, GPT/Codex, Gemini, Qwen…), toujours
+affiché « ≈ $ au tarif API », jamais comme une facture. Si tu utilises un agent via un abonnement,
+un réglage par agent renomme le montant en *valeur consommée*. Quand un agent ne fournit pas une
 valeur, l’app affiche *non fourni* au lieu de deviner.
 
 <!-- Capture : docs/media/analytics.png -->
