@@ -30,12 +30,13 @@ export type OverviewProps = {
   liveEventIds: Record<string, string>;
   repositoryOf?: (event: SessionEvent) => WorkspaceRepository | null;
   repositoryName: (pulse: AgentPulse) => string | null;
+  onGoTo: (pulse: AgentPulse) => void;
   setup: { anyAgent: boolean; claudeHooks: boolean; workspace: boolean };
   onOpen: (tab: "connectors" | "repositories") => void;
 };
 
 /** "What are my agents doing right now?" — then how the period went, then the raw activity. */
-export function OverviewPage({ agentEvents, events, analyticsEvents, analytics, range, onRange, liveEventIds, repositoryOf, repositoryName, setup, onOpen }: OverviewProps) {
+export function OverviewPage({ agentEvents, events, analyticsEvents, analytics, range, onRange, liveEventIds, repositoryOf, repositoryName, onGoTo, setup, onOpen }: OverviewProps) {
   // The cards and the race tick every second; only this page re-renders for it.
   const now = useNow(1000);
   const pulses = useMemo(() => sortPulses(activeProviders.map((provider) => agentPulse(provider.eventKey, agentEvents, now))), [agentEvents, now]);
@@ -50,10 +51,10 @@ export function OverviewPage({ agentEvents, events, analyticsEvents, analytics, 
       <SectionHeader
         title={<span id="agents-title">Vos agents en ce moment</span>}
         description={seen.length ? (attention.length ? `${attention.length} agent${attention.length > 1 ? "s ont" : " a"} besoin de toi — ils sont affichés en premier.` : "Aucun agent n’a besoin de toi pour l’instant.") : "Aucun agent observé pour l’instant."}
-        details="Une carte par agent observé, celles qui demandent ton attention en premier. Le badge résume son état (survole-le pour l’explication), puis viennent son action en cours, les chiffres de sa session et son activité des 15 dernières minutes."
+        details="Une carte par agent observé, celles qui demandent ton attention en premier. Clique sur une carte pour aller directement dans le terminal ou l’éditeur où travaille l’agent. Le badge résume son état (survole-le pour l’explication), puis viennent son action en cours, les chiffres de sa session et son activité des 15 dernières minutes."
       />
       {seen.length
-        ? <div className="agent-grid">{seen.map((pulse) => <AgentCard key={pulse.key} pulse={pulse} now={now} repository={repositoryName(pulse)} />)}</div>
+        ? <div className="agent-grid">{seen.map((pulse) => <AgentCard key={pulse.key} pulse={pulse} now={now} repository={repositoryName(pulse)} onGoTo={onGoTo} />)}</div>
         : <EmptyState title="En attente d’un agent" action={<button className="button" onClick={() => onOpen("connectors")}>Voir les connecteurs</button>}>Lance une session avec Claude Code, Codex, Gemini CLI, OpenCode ou Qwen Code : sa carte apparaîtra ici en quelques secondes.</EmptyState>}
       {seen.length > 0 && seen.length < pulses.length && <p className="text-muted small">Pas encore vus : {pulses.filter((pulse) => pulse.status === "never").map((pulse) => providerNames.get(pulse.key) ?? pulse.key).join(", ")}.</p>}
     </section>

@@ -2,6 +2,7 @@
 
 mod claude_transcripts;
 mod codex_rollout;
+mod focus;
 mod gemini_sessions;
 mod opencode_sessions;
 mod qwen_sessions;
@@ -9,7 +10,7 @@ mod workspace;
 
 use axum::{
     Router,
-    extract::{Request, State},
+    extract::{ConnectInfo, Request, State},
     http::{StatusCode, header},
     response::IntoResponse,
     routing::post,
@@ -40,6 +41,8 @@ struct CollectorState {
     status: Arc<Mutex<String>>,
     capture_prompts: Arc<AtomicBool>,
     capture_commands: Arc<AtomicBool>,
+    /// Claude Code process of each session, learnt from the connection of its first hook.
+    agent_pids: Arc<Mutex<std::collections::HashMap<String, u32>>>,
 }
 
 #[derive(Serialize)]
@@ -462,6 +465,25 @@ fn persist_event(state: &CollectorState, event: SessionEvent) -> bool {
     true
 }
 
+/// Brings the terminal or editor where an agent session runs to the front.
+#[tauri::command]
+async fn focus_agent(
+    state: tauri::State<'_, CollectorState>,
+    provider: String,
+    session_id: String,
+    project_path: Option<String>,
+) -> Result<focus::FocusOutcome, String> {
+    let known_pid = state.agent_pids.lock().ok().and_then(|pids| pids.get(&session_id).copied());
+    tauri::async_runtime::spawn_blocking(move || focus::focus_agent(&provider, known_pid, project_path.as_deref()))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn reveal_folder(path: String) -> Result<(), String> {
+    focus::reveal_folder(&path)
+}
+
 #[tauri::command]
 fn discover_workspace(path: String) -> Result<workspace::Workspace, String> {
     workspace::discover(&PathBuf::from(path))
@@ -615,6 +637,7 @@ fn parse_window_commits(log: &str, since: i64, until: i64) -> Vec<WindowCommit> 
 
 async fn receive_claude_hook(
     State(state): State<CollectorState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     request: Request,
 ) -> impl IntoResponse {
     let authorized = request
@@ -639,6 +662,18 @@ async fn receive_claude_hook(
     ) else {
         return StatusCode::NO_CONTENT;
     };
+    // The hook request comes from the Claude Code process itself: its client port names it, which
+    // lets "go to the agent" find the right terminal. Looked up once per session, while the
+    // connection is still open.
+    let known = state.agent_pids.lock().map(|pids| pids.contains_key(&event.session_id)).unwrap_or(true);
+    if !known {
+        let port = peer.port();
+        if let Ok(Some(pid)) = tauri::async_runtime::spawn_blocking(move || focus::pid_for_local_port(port)).await {
+            if let Ok(mut pids) = state.agent_pids.lock() {
+                pids.insert(event.session_id.clone(), pid);
+            }
+        }
+    }
     if !persist_event(&state, event) {
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
@@ -876,6 +911,7 @@ fn main() {
                 status: Arc::new(Mutex::new("starting".into())),
                 capture_prompts: Arc::new(AtomicBool::new(capture_prompts)),
                 capture_commands: Arc::new(AtomicBool::new(capture_commands)),
+                agent_pids: Arc::new(Mutex::new(std::collections::HashMap::new())),
             };
             let port = 43821;
             let address = SocketAddr::from(([127, 0, 0, 1], port));
@@ -889,7 +925,7 @@ fn main() {
                 match tokio::net::TcpListener::bind(address).await {
                     Ok(listener) => {
                         if let Ok(mut value) = status.lock() { *value = "listening".into(); }
-                        let _ = axum::serve(listener, router).await;
+                        let _ = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await;
                     }
                     Err(error) => {
                         if let Ok(mut value) = status.lock() { *value = format!("error: {error}"); }
@@ -946,7 +982,7 @@ fn main() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, load_analytics_events, export_session_history, repository_snapshot, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, retention_policy, update_retention_policy, clear_session_history])
+        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, load_analytics_events, export_session_history, repository_snapshot, focus_agent, reveal_folder, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, retention_policy, update_retention_policy, clear_session_history])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }

@@ -1,4 +1,5 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, KeyboardEvent, MouseEvent } from "react";
+import { ArrowUpRight } from "lucide-react";
 import type { AgentPulse, PulseStatus } from "./agentPulse";
 import { formatCompact, formatDuration } from "./analytics";
 import { InfoTip } from "./Explain";
@@ -41,7 +42,7 @@ function Metric({ label, value, explanation, tone, compact }: { label: string; v
  * current turn, its session's tool calls, tokens and cost, recent activity and last actions.
  * `compact` drops the inline explanations for the mini window (tooltips stay).
  */
-export function AgentCard({ pulse, now, repository, compact = false }: { pulse: AgentPulse; now: number; repository: string | null; compact?: boolean }) {
+export function AgentCard({ pulse, now, repository, compact = false, onGoTo }: { pulse: AgentPulse; now: number; repository: string | null; compact?: boolean; onGoTo?: (pulse: AgentPulse) => void }) {
   const provider = providerByKey.get(pulse.key)!;
   const status = STATUS_INFO[pulse.status];
   const session = pulse.session;
@@ -51,7 +52,15 @@ export function AgentCard({ pulse, now, repository, compact = false }: { pulse: 
   const place = repository ?? (pulse.project?.project_path ? `${pulse.project.project_path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1)} (hors workspace)` : null);
   const statusNote = pulse.status === "looping" && pulse.loop ? `Boucle détectée : ${pulse.loop.evidence}.` : pulse.status === "blocked" ? `${pulse.failureStreak} échecs d’affilée` : status.explanation;
 
-  return <article className={`agent-card status-${pulse.status} ${compact ? "compact" : ""}`} style={{ "--agent-color": provider.color } as CSSProperties} aria-label={`${provider.name} : ${status.label}`}>
+  // The whole card leads to the agent; its own buttons (explanations, raw data) keep their role.
+  const canGo = Boolean(onGoTo && pulse.session);
+  const go = (event: MouseEvent | KeyboardEvent) => {
+    if (!canGo || (event.target as HTMLElement).closest("button, a, summary, details")) return;
+    if ("key" in event && event.key !== "Enter") return;
+    onGoTo!(pulse);
+  };
+
+  return <article className={`agent-card status-${pulse.status} ${compact ? "compact" : ""} ${canGo ? "clickable" : ""}`} style={{ "--agent-color": provider.color } as CSSProperties} aria-label={`${provider.name} : ${status.label}`} onClick={go} onKeyDown={go} tabIndex={canGo ? 0 : undefined} title={canGo ? "Cliquer pour aller là où travaille l’agent" : undefined}>
     <header className="agent-card-header">
       <ProviderMark provider={provider} />
       <div className="agent-card-title">
@@ -60,6 +69,7 @@ export function AgentCard({ pulse, now, repository, compact = false }: { pulse: 
       </div>
       <span className="status-badge" title={status.explanation}>{status.label}</span>
     </header>
+    {canGo && <button className="go-to-agent" onClick={() => onGoTo!(pulse)}><ArrowUpRight size={14} />{pulse.status === "waiting" || pulse.status === "stalled" ? "Lui répondre" : "Aller à l’agent"}</button>}
 
     {pulse.status !== "working" && pulse.status !== "never" && <p className="agent-card-note">{statusNote}</p>}
 

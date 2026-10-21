@@ -466,3 +466,15 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- Go to the agent ---------- */
+.agent-card.clickable { cursor: pointer; transition: border-color 120ms, transform 120ms; }
+.agent-card.clickable:hover { border-color: color-mix(in srgb, var(--agent-color), transparent 35%); transform: translateY(-1px); }
+.go-to-agent { display: inline-flex; align-items: center; justify-self: start; gap: 5px; margin-top: -4px; padding: 3px 9px; border: 1px solid color-mix(in srgb, var(--agent-color), transparent 50%); border-radius: 999px; background: color-mix(in srgb, var(--agent-color), transparent 88%); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; }
+.go-to-agent:hover { background: color-mix(in srgb, var(--agent-color), transparent 75%); }
+.agent-card.status-waiting .go-to-agent, .agent-card.status-stalled .go-to-agent { border-color: var(--accent); background: var(--accent); color: #0f1530; }
+.toast { position: fixed; right: 20px; bottom: 20px; z-index: 120; display: flex; align-items: center; gap: 10px; max-width: min(520px, calc(100vw - 40px)); padding: 10px 12px; border: 1px solid var(--border-strong); border-left: 3px solid var(--good); border-radius: var(--radius); background: #10131af5; box-shadow: var(--shadow); font-size: 13px; animation: toast-in 180ms ease-out; }
+.toast.warn { border-left-color: var(--warn); }
+.toast > span { display: grid; gap: 2px; color: var(--text-2); }
+.toast b { color: var(--text); }
+@keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }

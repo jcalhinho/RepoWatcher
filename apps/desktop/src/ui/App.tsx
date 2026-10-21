@@ -19,6 +19,9 @@ import { useDialogFocus } from "./useDialogFocus";
 import { useNow } from "./useNow";
 import { useObserver } from "./useObserver";
 import { useWorkspace } from "./useWorkspace";
+import { useFocusAgent } from "./useFocusAgent";
+import { FocusToast } from "./FocusToast";
+import { providers } from "./providers";
 import { filterByRepository, pathKey, type RepositoryFilter } from "./workspace";
 import { RepositoryFilterBar, WorkspaceSwitcher, useRepositoryActivity } from "./WorkspaceViews";
 
@@ -57,6 +60,12 @@ export function App() {
     claudeHooks: observer.events.some((event) => event.provider === "claude_code" && event.kind !== "model_usage" && event.kind !== "session_started"),
     workspace: Boolean(workspace.workspace)
   }), [agentWindow.events.length, observer.events, workspace.workspace]);
+  const focus = useFocusAgent();
+  const goToAgent = (pulse: AgentPulse) => {
+    if (!pulse.session) return;
+    void focus.goTo({ provider: pulse.key, sessionId: pulse.session.id, projectPath: pulse.project?.project_path ?? null, agentName: providers.find((provider) => provider.eventKey === pulse.key)?.name ?? pulse.key });
+  };
+  const toast = <FocusToast toast={focus.toast} onReveal={(path) => void focus.revealFolder(path)} onDismiss={focus.dismiss} />;
   const repositoryName = (pulse: AgentPulse) => (pulse.project ? workspace.repositoryOf(pulse.project)?.name ?? null : null);
 
   useDialogFocus(() => {
@@ -86,7 +95,7 @@ export function App() {
   }
 
   if (compact) {
-    return <MiniView agentEvents={agentWindow.events} collectorState={observer.collectorState} pinned={miniPinned} onTogglePin={() => { setMiniPinnedPreference(!miniPinned); void setMiniPinned(!miniPinned); }} onExpand={leaveMini} repositoryName={repositoryName} />;
+    return <><MiniView agentEvents={agentWindow.events} collectorState={observer.collectorState} pinned={miniPinned} onTogglePin={() => { setMiniPinnedPreference(!miniPinned); void setMiniPinned(!miniPinned); }} onExpand={leaveMini} repositoryName={repositoryName} onGoTo={goToAgent} />{toast}</>;
   }
 
   return <div className="app">
@@ -122,6 +131,7 @@ export function App() {
           liveEventIds={observer.liveEventIds}
           repositoryOf={workspace.repositories.length && filter === "all" ? workspace.repositoryOf : undefined}
           repositoryName={repositoryName}
+          onGoTo={goToAgent}
           setup={setup}
           onOpen={setTab}
         />
@@ -132,6 +142,7 @@ export function App() {
       {tab === "settings" && <SettingsPage onExport={observer.exportHistory} onClear={observer.clearHistory} onMini={goMini} />}
     </main>
 
+    {toast}
     {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
     {connectorSetup && <ConnectorSetupDialog key={connectorSetup.kind} connector={connectorSetup} onClose={() => setConnectorSetup(null)} />}
   </div>;
