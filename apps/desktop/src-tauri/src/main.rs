@@ -4,6 +4,7 @@ mod codex_rollout;
 mod gemini_sessions;
 mod opencode_sessions;
 mod qwen_sessions;
+mod workspace;
 
 use axum::{
     Router,
@@ -94,6 +95,9 @@ struct RepositorySnapshot {
     root: String,
     project_hash: String,
     branch: Option<String>,
+    /// Commits ahead of / behind the upstream branch, when one is configured.
+    ahead: Option<u32>,
+    behind: Option<u32>,
     changed_files: Vec<RepositoryFile>,
     recent_commits: Vec<RepositoryCommit>,
 }
@@ -362,6 +366,16 @@ fn persist_event(state: &CollectorState, event: SessionEvent) -> bool {
 }
 
 #[tauri::command]
+fn discover_workspace(path: String) -> Result<workspace::Workspace, String> {
+    workspace::discover(&PathBuf::from(path))
+}
+
+#[tauri::command]
+fn resolve_repositories(paths: Vec<String>) -> std::collections::HashMap<String, Option<String>> {
+    workspace::main_repositories(paths)
+}
+
+#[tauri::command]
 fn repository_snapshot(path: String) -> Result<RepositorySnapshot, String> {
     let root = PathBuf::from(&path);
     if !root.is_dir() {
@@ -383,6 +397,14 @@ fn repository_snapshot(path: String) -> Result<RepositorySnapshot, String> {
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty());
+    // `behind<TAB>ahead`; fails silently when the branch has no upstream.
+    let (behind, ahead) = git(&["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+        .ok()
+        .and_then(|counts| {
+            let mut parts = counts.split_whitespace().map(|part| part.parse::<u32>().ok());
+            Some((parts.next()??, parts.next()??))
+        })
+        .map_or((None, None), |(behind, ahead)| (Some(behind), Some(ahead)));
     let status = git(&["status", "--porcelain=v1", "--untracked-files=all"])?;
     let changed_files = status
         .lines()
@@ -419,6 +441,8 @@ fn repository_snapshot(path: String) -> Result<RepositorySnapshot, String> {
         root: root.display().to_string(),
         project_hash: format!("{:x}", Sha256::digest(path.as_bytes())),
         branch,
+        ahead,
+        behind,
         changed_files,
         recent_commits,
     })
@@ -803,7 +827,7 @@ fn main() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, export_session_history, repository_snapshot, commits_in_window, collector_status, update_capture_policy, clear_session_history])
+        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, export_session_history, repository_snapshot, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, clear_session_history])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }

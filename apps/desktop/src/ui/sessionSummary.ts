@@ -244,8 +244,9 @@ export function isPossiblyTruncated(sessionEvents: SummaryEvent[], loadedEvents:
 /** Same rule as the repository map: explicit project path, or Gemini's project hash. */
 export function sessionMatchesRepository(events: SummaryEvent[], root: string, projectHash: string) {
   const normalizedRoot = normalizePath(root).toLowerCase();
+  // An agent started in a subfolder still works inside the repository.
   return events.some((event) =>
-    (event.project_path && normalizePath(event.project_path).toLowerCase() === normalizedRoot) ||
+    (event.project_path && (normalizePath(event.project_path).toLowerCase() === normalizedRoot || normalizePath(event.project_path).toLowerCase().startsWith(`${normalizedRoot}/`))) ||
     (event.provider === GEMINI && event.project_hash === projectHash)
   );
 }

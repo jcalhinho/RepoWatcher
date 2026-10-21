@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { MiniView } from "./MiniView";
+import { useWorkspace } from "./useWorkspace";
+import { filterByRepository, pathKey, type RepositoryFilter, type WorkspaceRepository } from "./workspace";
+import { RepositoryFilterBar, WorkspacePanel, WorkspaceSwitcher, useRepositoryActivity } from "./WorkspaceViews";
 import { enterMiniWindow, leaveMiniWindow, setMiniPinned } from "./miniWindow";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -23,7 +26,6 @@ import { useDialogFocus } from "./useDialogFocus";
 import { WorkspaceDialog, WorkspaceModal, type WorkspaceDialogKind } from "./WorkspaceDialog";
 
 export function App() {
-  const [repoPath, setRepoPath] = useState<string | null>(() => window.localStorage.getItem("repowatcher.selected-repository"));
   const [view, setView] = useState<"overview" | "sessions" | "repo-map">("overview");
   const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialogKind | null>(null);
   const [search, setSearch] = useState("");
@@ -32,7 +34,7 @@ export function App() {
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyNotice, setHistoryNotice] = useState("");
-  const [repoSnapshot, setRepoSnapshot] = useState<RepositorySnapshot | null>(null);
+  const [mapRepository, setMapRepository] = useState<WorkspaceRepository | null>(null);
   const [collectorState, setCollectorState] = useState("starting");
   const [connectorSetup, setConnectorSetup] = useState<ConnectorSetup | null>(null);
 
@@ -63,23 +65,21 @@ export function App() {
     }).then((stop) => { unlisten = stop; });
     return () => { window.clearInterval(timer); unlisten?.(); unlistenError?.(); };
   }, []);
-  useEffect(() => {
-    if (repoPath) window.localStorage.setItem("repowatcher.selected-repository", repoPath);
-    else window.localStorage.removeItem("repowatcher.selected-repository");
-    if (!repoPath) {
-      setRepoSnapshot(null);
-      return;
-    }
-    let active = true;
-    const refreshRepository = () => invoke<RepositorySnapshot>("repository_snapshot", { path: repoPath }).then((snapshot) => {
-      if (active) setRepoSnapshot(snapshot);
-    }).catch(() => {
-      if (active) setRepoSnapshot(null);
-    });
-    refreshRepository();
-    const timer = window.setInterval(refreshRepository, 5000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [repoPath]);
+  const workspace = useWorkspace(events);
+  const [repositoryFilter, setRepositoryFilterState] = useState<RepositoryFilter>(() => { try { return window.localStorage.getItem("repowatcher.repository-filter") ?? "all"; } catch { return "all"; } });
+  // A filter on a repository that left the workspace falls back to every repository.
+  const activeFilter: RepositoryFilter = repositoryFilter === "all" || repositoryFilter === "outside" || workspace.repositories.some((repository) => pathKey(repository.path) === pathKey(repositoryFilter)) ? repositoryFilter : "all";
+  const scopedEvents = useMemo(() => filterByRepository(events, activeFilter, workspace.repositoryOf), [events, activeFilter, workspace.repositoryOf]);
+  const { activity: repositoryActivity, outside: outsideEvents } = useRepositoryActivity(events, workspace);
+  function setRepositoryFilter(filter: RepositoryFilter) {
+    setRepositoryFilterState(filter);
+    try { window.localStorage.setItem("repowatcher.repository-filter", filter); } catch { /* optional preference */ }
+  }
+  const selectedRepository = activeFilter !== "all" && activeFilter !== "outside" ? workspace.repositories.find((repository) => pathKey(repository.path) === pathKey(activeFilter)) ?? null : null;
+  function openRepositoryMap(repository: WorkspaceRepository | null) {
+    setMapRepository(repository ?? selectedRepository ?? workspace.repositories[0] ?? null);
+    showView("repo-map");
+  }
   const stats = useMemo(() => {
     const perProvider = new Map<string, number>();
     for (const event of events) perProvider.set(event.provider, (perProvider.get(event.provider) || 0) + 1);
@@ -120,13 +120,6 @@ export function App() {
     setMiniPinnedState(next);
     writeFlag("repowatcher.mini-pinned", next);
     void setMiniPinned(next);
-  }
-
-  async function selectRepository() {
-    const selected = await open({ directory: true, multiple: false, title: "Choisir un dépôt Git" });
-    if (typeof selected === "string") {
-      setRepoPath(selected);
-    }
   }
 
   async function connect(kind: ConnectorKind) {
@@ -187,7 +180,7 @@ export function App() {
   }
 
   if (miniMode || narrowWindow) {
-    return <MiniView events={events} collectorState={collectorState} pinned={miniPinned} onTogglePin={toggleMiniPin} onExpand={leaveMini} />;
+    return <MiniView events={events} collectorState={collectorState} pinned={miniPinned} onTogglePin={toggleMiniPin} onExpand={leaveMini} repositoryName={(project) => workspace.repositoryOf(project)?.name ?? null} />;
   }
 
   return (
@@ -195,22 +188,23 @@ export function App() {
       <main className="main-area">
         <header className="topbar">
           <div className="brand-lockup"><div className="brand-mark"><Activity size={18} strokeWidth={2.4} /></div><div><div className="brand-name">repowatcher</div><div className="brand-product">AGENT OBSERVER</div></div></div>
-          <button className="workspace-switcher top-repository" onClick={selectRepository}><span className="workspace-icon"><FolderGit2 size={16} /></span><span className="workspace-copy"><b>{repoPath ? repoPath.split(/[\\/]/).filter(Boolean).at(-1) : "Aucun dépôt"}</b><small>{repoPath ? "Dépôt local sélectionné" : "Choisir un dépôt local"}</small></span><ChevronDown size={14} className="muted" /></button>
-          <nav className="workspace-nav" aria-label="Outils de l’espace de travail"><button onClick={() => showView("sessions")}><Activity size={15} /> Sessions <small>{stats.sessions}</small></button><button onClick={() => showView("repo-map")}><GitBranch size={15} /> Carte du dépôt</button><button onClick={() => setWorkspaceDialog("connectors")}><Plus size={15} /> Connecteurs</button><button onClick={() => setWorkspaceDialog("preferences")} aria-label="Préférences"><Settings2 size={16} /></button><button onClick={() => setWorkspaceDialog("help")} aria-label="Aide"><CircleHelp size={16} /></button><button className="mini-toggle" onClick={goMini} title="Réduire en colonne dans un coin de l’écran"><Minimize2 size={15} /> Mode mini</button></nav>
+          <WorkspaceSwitcher model={workspace} />
+          <nav className="workspace-nav" aria-label="Outils de l’espace de travail"><button onClick={() => showView("sessions")}><Activity size={15} /> Sessions <small>{stats.sessions}</small></button><button onClick={() => openRepositoryMap(null)}><GitBranch size={15} /> Carte du dépôt</button><button onClick={() => setWorkspaceDialog("connectors")}><Plus size={15} /> Connecteurs</button><button onClick={() => setWorkspaceDialog("preferences")} aria-label="Préférences"><Settings2 size={16} /></button><button onClick={() => setWorkspaceDialog("help")} aria-label="Aide"><CircleHelp size={16} /></button><button className="mini-toggle" onClick={goMini} title="Réduire en colonne dans un coin de l’écran"><Minimize2 size={15} /> Mode mini</button></nav>
           <div className="topbar-actions"><div className="local-status"><span className={`status-led ${collectorState === "listening" ? "active" : collectorState.startsWith("error") ? "failed" : ""}`} /> Collecteur <span className={`status-pill ${collectorState.startsWith("error") ? "failed" : ""}`}>{collectorState === "listening" ? (events.length ? "ÉVÉNEMENTS REÇUS" : "EN ÉCOUTE LOCALE") : collectorState.startsWith("error") ? "PORT LOCAL INDISPONIBLE" : collectorState === "preview" ? "APERÇU WEB" : "DÉMARRAGE"}</span></div></div>
         </header>
 
         <div className="page-content">
           <section>
-          <SprintTrack events={events} liveEventIds={liveEventIds} />
+          <RepositoryFilterBar model={workspace} filter={activeFilter} onFilter={setRepositoryFilter} activity={repositoryActivity} outside={outsideEvents} total={events.length} />
+          <SprintTrack events={scopedEvents} liveEventIds={liveEventIds} />
 
-          <SessionAnalytics events={events} />
+          <SessionAnalytics events={scopedEvents} repositoryOf={workspace.repositories.length && activeFilter === "all" ? workspace.repositoryOf : undefined} />
 
           <Resizable id="activity-connectors" defaultHeight={320} min={160} max={1400} label="l’activité récente et les connecteurs">
           <section className="content-grid">
             <div className="panel session-panel">
               <div className="panel-heading"><div><div className="panel-title-row"><h2>Activité récente</h2><span className="live-indicator"><span /> {events.length ? "FLUX AGENTS CONNECTÉS" : "EN ATTENTE DU PREMIER ÉVÉNEMENT"}</span></div><p>Événements réels reçus localement ; texte sensible non conservé par défaut.</p></div></div>
-              {events.length ? <EventFeed events={events} /> : <div className="empty-sessions"><div className="empty-illustration"><div className="orbit orbit-a" /><div className="orbit orbit-b" /><div className="empty-core"><Bot size={23} /></div><span className="orbit-dot dot-one" /><span className="orbit-dot dot-two" /><span className="orbit-dot dot-three" /></div><h3>Le collecteur local est prêt</h3><p>Configure Claude Code pour les outils en direct, ou Codex pour un événement à chaque fin de tour.<br />Les prompts et commandes sont désactivés par défaut.</p><button className="outline-button" onClick={() => connect("claude")}><TerminalSquare size={15} /> Configurer Claude Code</button></div>}
+              {scopedEvents.length ? <EventFeed events={scopedEvents} /> : <div className="empty-sessions"><div className="empty-illustration"><div className="orbit orbit-a" /><div className="orbit orbit-b" /><div className="empty-core"><Bot size={23} /></div><span className="orbit-dot dot-one" /><span className="orbit-dot dot-two" /><span className="orbit-dot dot-three" /></div><h3>Le collecteur local est prêt</h3><p>Configure Claude Code pour les outils en direct, ou Codex pour un événement à chaque fin de tour.<br />Les prompts et commandes sont désactivés par défaut.</p><button className="outline-button" onClick={() => connect("claude")}><TerminalSquare size={15} /> Configurer Claude Code</button></div>}
             </div>
 
             <div className="panel connectors-panel">
@@ -223,14 +217,17 @@ export function App() {
           </section>
           </Resizable>
 
+          <Resizable id="workspace-repositories" defaultHeight={340} min={150} max={1400} label="les dépôts du workspace">
+            <WorkspacePanel model={workspace} activity={repositoryActivity} onFilter={setRepositoryFilter} onOpenMap={openRepositoryMap} />
+          </Resizable>
+
           <section className="bottom-grid">
-            <div className="panel repo-panel"><div className="panel-heading compact"><div><h2>Carte du dépôt</h2><p>{repoPath || "Choisis un dépôt pour afficher son état Git et les fichiers observés."}</p></div><button className="outline-button" onClick={() => showView("repo-map")}>Détails Git</button></div>{repoSnapshot ? <div className="repo-summary"><b>{repoSnapshot.branch || "HEAD détachée"}</b><span>{repoSnapshot.changed_files.length} changements non commités</span><span>{repoSnapshot.recent_commits.length} commits récents</span></div> : <div className="repo-empty"><div className="repo-grid-icon"><FolderGit2 size={21} /></div><span>{repoPath ? "État Git indisponible — vérifie que Git est installé et ce dossier est un dépôt." : "Choisis un dépôt local pour lire son état Git."}</span></div>}</div>
             <div className="panel insight-panel"><div className="insight-heading"><div className="insight-icon"><Sparkles size={16} /></div><div><h2>Conclusion observée</h2><p>Résumé déterministe, sans interprétation LLM</p></div><span className="soon-tag">{events.length ? "SESSION EN COURS / HISTORIQUE" : "EN ATTENTE"}</span></div><div className="insight-empty"><span className="insight-line" /><p>{events.length ? `${stats.toolEvents} événements d’outil et ${stats.files} chemins remontés. Les changements Git affichés ne sont pas attribués à l’agent sans preuve de causalité. Les tokens affichés proviennent des champs réellement exposés par les connecteurs et ne sont pas assimilés à un coût facturable.` : "Aucune conclusion avant la première session réelle. Les événements, l’état Git, les tests et leurs limites seront résumés séparément."}</p></div></div>
           </section>
 
           </section>
-          {view === "sessions" && <WorkspaceModal titleId="history-title" title="Historique des sessions" className="history-dialog" onClose={() => setView("overview")}><SessionExplorer events={events} onConnect={connect} onClear={clearHistory} onLoadOlder={loadOlderHistory} hasMore={historyHasMore} loadingOlder={historyLoading} onExport={exportHistory} notice={historyNotice} repository={repoSnapshot} /></WorkspaceModal>}
-          {view === "repo-map" && <WorkspaceModal titleId="repo-title" title="Carte du dépôt" onClose={() => setView("overview")}><p className="dialog-subtitle">{repoPath || "Sélectionne un dépôt Git local pour comparer son état avec les événements des agents."}</p>{repoSnapshot ? <RepositoryMap snapshot={repoSnapshot} events={events} /> : <div className="panel secondary-empty">La vue Git lit la branche, les modifications non commitées et les derniers commits.</div>}<button className="primary-button" onClick={selectRepository}><Plus size={16} /> {repoPath ? "Changer de dépôt" : "Sélectionner un dépôt"}</button></WorkspaceModal>}
+          {view === "sessions" && <WorkspaceModal titleId="history-title" title="Historique des sessions" className="history-dialog" onClose={() => setView("overview")}><SessionExplorer events={events} onConnect={connect} onClear={clearHistory} onLoadOlder={loadOlderHistory} hasMore={historyHasMore} loadingOlder={historyLoading} onExport={exportHistory} notice={historyNotice} repositoryFor={(sessionEvents) => { const repository = sessionEvents.map(workspace.repositoryOf).find(Boolean); return repository ? { root: repository.path, project_hash: repository.project_hash, name: repository.name } : null; }} /></WorkspaceModal>}
+          {view === "repo-map" && <WorkspaceModal titleId="repo-title" title={mapRepository ? `Carte du dépôt · ${mapRepository.name}` : "Carte du dépôt"} onClose={() => setView("overview")}><p className="dialog-subtitle">{mapRepository?.path || "Choisis un workspace (un dossier ou un .code-workspace) pour comparer l’état Git de ses dépôts avec les événements des agents."}</p>{mapRepository && workspace.states[mapRepository.path]?.snapshot ? <RepositoryMap snapshot={workspace.states[mapRepository.path]!.snapshot!} events={filterByRepository(events, mapRepository.path, workspace.repositoryOf)} /> : <div className="panel secondary-empty">{mapRepository ? "Lecture de l’état Git…" : "La vue Git lit la branche, les modifications non commitées et les derniers commits de chaque dépôt."}</div>}{workspace.repositories.length > 1 && <div className="map-repository-picker">{workspace.repositories.map((repository) => <button key={repository.path} className={mapRepository?.path === repository.path ? "selected" : ""} onClick={() => setMapRepository(repository)}>{repository.name}</button>)}</div>}</WorkspaceModal>}
           <footer className="page-footer"><span><span className={`footer-led ${collectorState === "listening" ? "active" : collectorState === "preview" ? "preview" : ""}`} /> {collectorState === "listening" ? "Collecteur local actif" : collectorState === "preview" ? "Aperçu web — collecte inactive" : "Collecteur en démarrage"}</span><span>Agent Observer <b>·</b> Connecteurs Claude Code + Codex + Gemini CLI + OpenCode + Cursor + Qwen Code</span><span>Événements chargés : {events.length}</span></footer>
         </div>
       </main>

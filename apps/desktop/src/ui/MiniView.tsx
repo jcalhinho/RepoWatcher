@@ -28,7 +28,7 @@ function since(at: number | null, now: number) {
 }
 
 /** Compact always-visible view: one card per agent with only what needs a glance. */
-export function MiniView({ events, collectorState, pinned, onTogglePin, onExpand }: { events: SessionEvent[]; collectorState: string; pinned: boolean; onTogglePin: () => void; onExpand: () => void }) {
+export function MiniView({ events, collectorState, pinned, onTogglePin, onExpand, repositoryName }: { events: SessionEvent[]; collectorState: string; pinned: boolean; onTogglePin: () => void; onExpand: () => void; repositoryName: (project: NonNullable<AgentPulse["project"]>) => string | null }) {
   const now = useNow(1000);
   const pulses = useMemo(() => sortPulses(chartProviders.map((provider) => agentPulse(provider.eventKey, events, now))), [events, now]);
   const seen = pulses.filter((pulse) => pulse.status !== "never");
@@ -47,13 +47,13 @@ export function MiniView({ events, collectorState, pinned, onTogglePin, onExpand
       </div>
     </header>
     <div className="mini-cards">
-      {seen.length ? seen.map((pulse) => <AgentCard key={pulse.key} pulse={pulse} now={now} />) : <div className="mini-empty">Aucun agent observé depuis le lancement. Démarre une session Claude Code, Codex, Gemini CLI, OpenCode, Cursor ou Qwen Code.</div>}
+      {seen.length ? seen.map((pulse) => <AgentCard key={pulse.key} pulse={pulse} now={now} repository={pulse.project ? repositoryName(pulse.project) : null} />) : <div className="mini-empty">Aucun agent observé depuis le lancement. Démarre une session Claude Code, Codex, Gemini CLI, OpenCode, Cursor ou Qwen Code.</div>}
     </div>
     {unseen.length > 0 && <footer className="mini-footer">Pas encore vus : {unseen.map((pulse) => byKey.get(pulse.key)?.name ?? pulse.key).join(", ")}</footer>}
   </div>;
 }
 
-function AgentCard({ pulse, now }: { pulse: AgentPulse; now: number }) {
+function AgentCard({ pulse, now, repository }: { pulse: AgentPulse; now: number; repository: string | null }) {
   const provider = byKey.get(pulse.key)!;
   const copy = STATUS_COPY[pulse.status];
   const session = pulse.session;
@@ -67,6 +67,7 @@ function AgentCard({ pulse, now }: { pulse: AgentPulse; now: number }) {
       <span className="mini-status">{copy.label}</span>
       <time className="mini-age" title="Dernier événement">{since(pulse.lastEventAt, now)}</time>
     </div>
+    {(repository || pulse.project?.project_path) && <div className="mini-repo" title={pulse.project?.project_path ?? undefined}>⌂ {repository ?? `${(pulse.project?.project_path ?? "").replaceAll("\\", "/").split("/").filter(Boolean).at(-1)} · hors workspace`}</div>}
     {hint && <div className="mini-hint">{hint}</div>}
     {pulse.current && <div className={`mini-now ${pulse.current.tone}`}><span>{pulse.current.text}</span>{pulse.current.detail && <small>{pulse.current.detail}</small>}</div>}
     <dl className="mini-metrics">

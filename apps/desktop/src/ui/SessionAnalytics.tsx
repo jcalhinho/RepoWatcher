@@ -7,6 +7,7 @@ import { BarList, LineChart, type BarRow } from "./charts";
 import { Resizable } from "./Resizable";
 import { chartProviders, providers } from "./providers";
 import { sessionKey, type SessionEvent } from "./types";
+import type { WorkspaceRepository } from "./workspace";
 import { useNow } from "./useNow";
 
 // Status and neutral colors: never reused for an agent identity.
@@ -21,7 +22,7 @@ const nameOf = (key: string) => byKey.get(key)?.name ?? key;
 const colorOf = (key: string) => byKey.get(key)?.color ?? SINGLE_SERIES;
 const shortPath = (path: string) => path.replaceAll("\\", "/").split("/").filter(Boolean).slice(-2).join("/");
 
-export function SessionAnalytics({ events }: { events: SessionEvent[] }) {
+export function SessionAnalytics({ events, repositoryOf }: { events: SessionEvent[]; /** Set when a multi-repository workspace is shown unfiltered. */ repositoryOf?: (event: SessionEvent) => WorkspaceRepository | null }) {
   const now = useNow(10_000);
   const [chosen, setChosen] = useState<AnalyticsRange | null>(null);
   // Until the user picks a window, show the last hour when it has activity, otherwise all loaded history.
@@ -46,9 +47,10 @@ export function SessionAnalytics({ events }: { events: SessionEvent[] }) {
       files: topFiles(scoped),
       agentTokens: tokensByAgent(scoped, CHART_KEYS),
       turns: turnDurations(scoped, CHART_KEYS),
-      models: modelsUsed(scoped)
+      models: modelsUsed(scoped),
+      repositories: repositoryOf ? eventsPerRepository(scoped, repositoryOf) : []
     };
-  }, [events, range, now]);
+  }, [events, range, now, repositoryOf]);
 
   const lines = (series: typeof data.activity) => series.map((line) => ({ key: line.key, label: nameOf(line.key), color: colorOf(line.key), values: line.values }));
   const callRows: BarRow[] = data.calls.map((row) => ({
@@ -82,6 +84,11 @@ export function SessionAnalytics({ events }: { events: SessionEvent[] }) {
     valueLabel: `${formatCompact(row.tokens)} · ${row.requests} req.`
   }));
 
+  const repositoryRows: BarRow[] = data.repositories.map((row) => ({
+    key: row.path, label: row.name, title: `${row.name} · ${row.total} événements`,
+    segments: CHART_KEYS.map((key) => ({ value: row.byAgent.get(key) ?? 0, color: colorOf(key), label: nameOf(key) })),
+    valueLabel: String(row.total)
+  }));
   const summary = [
     `${data.sessions} session${data.sessions > 1 ? "s" : ""}`,
     `${formatCompact(data.scoped.length)} événements`,
@@ -109,6 +116,7 @@ export function SessionAnalytics({ events }: { events: SessionEvent[] }) {
       <ChartCard title="Fichiers les plus touchés" note="modifications et lectures"><BarList rows={fileRows} format={formatCompact} legend={[{ label: "modifiés", color: NEUTRAL_STRONG }, { label: "lus", color: NEUTRAL_SOFT }]} emptyText="Aucun chemin de fichier remonté." /></ChartCard>
       <ChartCard title="Tokens par agent" note="entrée / sortie (hachuré)"><BarList rows={tokenRows} format={formatCompact} emptyText="Aucun compteur de tokens fourni." /></ChartCard>
       <ChartCard title="Durée des tours" note="moyenne des durées rapportées"><BarList rows={turnRows} format={formatDuration} emptyText="Aucune durée de tour rapportée." /></ChartCard>
+      {repositoryOf && <ChartCard title="Dépôts les plus actifs" note="événements par dépôt, couleur = agent"><BarList rows={repositoryRows} format={formatCompact} emptyText="Aucun événement rattaché à un dépôt du workspace." /></ChartCard>}
       <ChartCard title="Modèles utilisés" note="tokens et requêtes par modèle"><BarList rows={modelRows} format={formatCompact} emptyText="Aucun modèle rapporté." /></ChartCard>
     </div>
     </Resizable>
@@ -117,4 +125,17 @@ export function SessionAnalytics({ events }: { events: SessionEvent[] }) {
 
 function ChartCard({ title, note, children }: { title: string; note: string; children: React.ReactNode }) {
   return <div className="chart-card"><div className="chart-card-heading"><h3>{title}</h3><small>{note}</small></div>{children}</div>;
+}
+
+function eventsPerRepository(events: SessionEvent[], repositoryOf: (event: SessionEvent) => WorkspaceRepository | null) {
+  const rows = new Map<string, { path: string; name: string; total: number; byAgent: Map<string, number> }>();
+  for (const event of events) {
+    const repository = repositoryOf(event);
+    if (!repository) continue;
+    const row = rows.get(repository.path) ?? { path: repository.path, name: repository.name, total: 0, byAgent: new Map<string, number>() };
+    row.total += 1;
+    row.byAgent.set(event.provider, (row.byAgent.get(event.provider) ?? 0) + 1);
+    rows.set(repository.path, row);
+  }
+  return [...rows.values()].sort((a, b) => b.total - a.total).slice(0, 12);
 }

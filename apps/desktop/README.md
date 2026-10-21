@@ -92,6 +92,21 @@ counts. Command text and user prompt text are separately opt-in. Tool outputs,
 assistant responses, and reasoning are never persisted. Codex counters describe
 the provider's last model request, not an inferred monetary cost.
 
+A workspace replaces the single selected repository. Choose either a folder,
+in which every Git repository up to four levels deep is found (dependency and
+build folders are skipped), or a VS Code `.code-workspace` file, whose listed
+folders are used (comments and trailing commas are accepted; missing folders
+are reported). Each event is attached to the deepest repository containing its
+project or file path; paths outside every repository are resolved with
+`git rev-parse --git-common-dir`, so a worktree counts for the clone it belongs
+to, and Gemini CLI events match by project-path hash. A filter row scopes the
+race, charts and activity feed to one repository or to events outside the
+workspace. The repositories table shows branch, commits ahead/behind upstream,
+uncommitted changes, agents seen and active, and last activity side by side;
+Git changes are never attributed to an agent. Repositories with recent agent
+activity are refreshed every 5 seconds, the others every minute. The workspace
+is observed read-only.
+
 Qwen Code is supported by following appended JSONL chat records under
 `%USERPROFILE%\\.qwen\\projects\\<project>\\chats` (or
 `$HOME/.qwen/projects/<project>/chats`). No Qwen settings are edited. At

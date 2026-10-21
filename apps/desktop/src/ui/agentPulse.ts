@@ -36,6 +36,8 @@ export type AgentPulse = {
     cost: number | null;
     model: string | null;
   } | null;
+  /** Where the latest event happened, to name its repository. */
+  project: { project_path: string | null; file_path: string | null; project_hash: string | null } | null;
   /** Events per minute over the last 15 minutes, oldest first. */
   spark: number[];
 };
@@ -64,7 +66,7 @@ export function agentPulse(key: string, events: SessionEvent[], now: number): Ag
     const age = now - Date.parse(event.occurred_at);
     if (age >= 0 && age < SPARK_MINUTES * 60_000) spark[SPARK_MINUTES - 1 - Math.floor(age / 60_000)] += 1;
   }
-  if (!own.length) return { key, status: "never", lastEventAt: null, current: null, recent: [], turnStartedAt: null, failureStreak: 0, session: null, spark };
+  if (!own.length) return { key, status: "never", lastEventAt: null, current: null, recent: [], turnStartedAt: null, failureStreak: 0, session: null, project: null, spark };
 
   const latest = own[0];
   const lastEventAt = Date.parse(latest.occurred_at);
@@ -122,6 +124,7 @@ export function agentPulse(key: string, events: SessionEvent[], now: number): Ag
       cost: summary.cost && summary.cost.unpricedEvents === 0 ? summary.cost.value : null,
       model: summary.models[0]?.name ?? null
     },
+    project: { project_path: latest.project_path, file_path: latest.file_path, project_hash: latest.project_hash ?? null },
     spark
   };
 }

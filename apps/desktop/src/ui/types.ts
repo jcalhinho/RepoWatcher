@@ -22,6 +22,9 @@ export type RepositorySnapshot = {
   root: string;
   project_hash: string;
   branch: string | null;
+  /** Commits ahead of / behind the upstream branch; null without an upstream. */
+  ahead: number | null;
+  behind: number | null;
   changed_files: Array<{ path: string; status: string }>;
   recent_commits: Array<{ short_id: string; subject: string; relative_time: string }>;
 };
