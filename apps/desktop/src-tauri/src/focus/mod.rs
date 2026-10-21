@@ -3,10 +3,13 @@
 //! bringing a window forward is platform code (`macos.rs`, `windows.rs`).
 
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
+pub mod launch;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]
@@ -26,6 +29,21 @@ pub(crate) fn tr(fr: &str, en: &str) -> String {
         en
     }
     .to_owned()
+}
+
+/// The terminal or editor each session was last seen in, so a session that ended is started
+/// again where it was.
+static LAST_HOST: Mutex<Option<HashMap<String, launch::Host>>> = Mutex::new(None);
+
+fn remember_host(session_id: &str, host: launch::Host) {
+    if let Ok(mut map) = LAST_HOST.lock() {
+        map.get_or_insert_with(HashMap::new)
+            .insert(session_id.to_owned(), host);
+    }
+}
+
+fn remembered_host(session_id: &str) -> Option<launch::Host> {
+    LAST_HOST.lock().ok()?.as_ref()?.get(session_id).copied()
 }
 
 /// What happened, in words the UI can show as is.
@@ -168,7 +186,13 @@ pub fn snapshot() -> Vec<ProcInfo> {
 
 /// Brings the agent's terminal or editor to the front. `known_pid` comes from the collector
 /// (Claude Code hooks); other agents are searched by name and folder.
-pub fn focus_agent(provider: &str, known_pid: Option<u32>, project: Option<&str>) -> FocusOutcome {
+pub fn focus_agent(
+    provider: &str,
+    known_pid: Option<u32>,
+    project: Option<&str>,
+    session_id: Option<&str>,
+    preferred_host: Option<&str>,
+) -> FocusOutcome {
     let processes = snapshot();
     let pid = known_pid
         .filter(|pid| processes.iter().any(|process| process.pid == *pid))
@@ -177,16 +201,12 @@ pub fn focus_agent(provider: &str, known_pid: Option<u32>, project: Option<&str>
         .filter(|path| Path::new(path).is_dir())
         .map(str::to_owned);
     let Some(pid) = pid else {
-        return FocusOutcome {
-            ok: false,
-            message: tr(
-                "Agent introuvable : sa session est sans doute terminée.",
-                "Agent not found: its session has probably ended.",
-            ),
-            fallback_folder,
-        };
+        return relaunch(provider, session_id, preferred_host, fallback_folder);
     };
     let chain = ancestors(&processes, pid);
+    if let (Some(id), Some(host)) = (session_id, launch::host_of(&chain)) {
+        remember_host(id, host);
+    }
     match bring_forward(&chain, &processes, project) {
         Ok(message) => FocusOutcome {
             ok: true,
@@ -228,6 +248,64 @@ fn bring_forward(
     Err(tr(
         "Mise au premier plan non prise en charge sur ce système.",
         "Bringing windows forward is not supported on this system.",
+    ))
+}
+
+/// The agent is not running: start its session again in the terminal or editor it was in, or in
+/// the one the user prefers.
+fn relaunch(
+    provider: &str,
+    session_id: Option<&str>,
+    preferred_host: Option<&str>,
+    fallback_folder: Option<String>,
+) -> FocusOutcome {
+    let not_found = |fallback_folder| FocusOutcome {
+        ok: false,
+        message: tr(
+            "Agent introuvable et impossible de le relancer (dossier ou commande inconnus).",
+            "Agent not found and it can't be started again (unknown folder or command).",
+        ),
+        fallback_folder,
+    };
+    let (Some(folder), Some(command)) = (
+        fallback_folder.as_deref(),
+        launch::resume_command(provider, session_id),
+    ) else {
+        return not_found(fallback_folder);
+    };
+    let host = session_id
+        .and_then(remembered_host)
+        .or_else(|| preferred_host.and_then(launch::Host::parse))
+        .unwrap_or(launch::Host::Terminal);
+    match open_in_host(host, folder, &command) {
+        Ok(message) => FocusOutcome {
+            ok: true,
+            message,
+            fallback_folder: None,
+        },
+        Err(message) => FocusOutcome {
+            ok: false,
+            message,
+            fallback_folder,
+        },
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn open_in_host(host: launch::Host, folder: &str, command: &str) -> Result<String, String> {
+    macos::open_in_host(host, folder, command)
+}
+
+#[cfg(target_os = "windows")]
+fn open_in_host(host: launch::Host, folder: &str, command: &str) -> Result<String, String> {
+    windows::open_in_host(host, folder, command)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn open_in_host(_host: launch::Host, _folder: &str, _command: &str) -> Result<String, String> {
+    Err(tr(
+        "Relancer un agent n’est pas pris en charge sur ce système.",
+        "Starting an agent again is not supported on this system.",
     ))
 }
 

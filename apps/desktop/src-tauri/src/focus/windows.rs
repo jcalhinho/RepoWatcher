@@ -2,6 +2,7 @@
 //! Terminal, a classic console (owned by a `conhost.exe` child of the shell) or an editor window
 //! whose title names the project.
 
+use super::launch::Host;
 use super::{ProcInfo, tr};
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -96,5 +97,61 @@ pub fn bring_forward(
     Ok(tr(
         &format!("Fenêtre « {title} » mise au premier plan."),
         &format!("Window “{title}” brought to the front."),
+    ))
+}
+
+/// Starts `command` in `folder`: in a new Windows Terminal (or console) window, or, for an
+/// editor, the folder is opened and the command copied for its integrated terminal.
+pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, String> {
+    use std::process::Command;
+    if host.is_editor() {
+        let program = match host {
+            Host::Cursor => "cursor",
+            Host::Windsurf => "windsurf",
+            _ => "code",
+        };
+        Command::new("cmd")
+            .args(["/C", program, folder])
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        // `clip` reads the command from its standard input.
+        let mut clip = Command::new("clip")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        std::io::Write::write_all(&mut clip.stdin.take().ok_or("clip")?, command.as_bytes())
+            .map_err(|error| error.to_string())?;
+        let _ = clip.wait();
+        return Ok(tr(
+            &format!(
+                "Éditeur ouvert sur le projet. Commande copiée : colle-la dans son terminal ({command})."
+            ),
+            &format!(
+                "Editor opened on the project. Command copied: paste it in its terminal ({command})."
+            ),
+        ));
+    }
+    // Windows Terminal when installed, a classic console otherwise.
+    let with_wt = Command::new("wt.exe")
+        .args(["-d", folder, "cmd", "/k", command])
+        .spawn();
+    if with_wt.is_err() {
+        Command::new("cmd")
+            .args([
+                "/C",
+                "start",
+                "Agent Observer",
+                "/D",
+                folder,
+                "cmd",
+                "/k",
+                command,
+            ])
+            .spawn()
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(tr(
+        &format!("Agent relancé dans un nouveau terminal : {command}"),
+        &format!("Agent started again in a new terminal: {command}"),
     ))
 }

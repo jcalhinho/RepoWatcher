@@ -489,6 +489,7 @@ async fn focus_agent(
     session_id: String,
     project_path: Option<String>,
     lang: Option<String>,
+    launch_host: Option<String>,
 ) -> Result<focus::FocusOutcome, String> {
     focus::set_language(lang.as_deref());
     let known_pid = state
@@ -497,7 +498,13 @@ async fn focus_agent(
         .ok()
         .and_then(|pids| pids.get(&session_id).copied());
     tauri::async_runtime::spawn_blocking(move || {
-        focus::focus_agent(&provider, known_pid, project_path.as_deref())
+        focus::focus_agent(
+            &provider,
+            known_pid,
+            project_path.as_deref(),
+            Some(&session_id),
+            launch_host.as_deref(),
+        )
     })
     .await
     .map_err(|error| error.to_string())

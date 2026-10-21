@@ -1,6 +1,7 @@
 //! macOS: select the Terminal / iTerm2 tab running the agent, open the project window of an
 //! editor, or activate whichever application hosts the agent.
 
+use super::launch::{Host, shell_single_quote};
 use super::{ProcInfo, tr};
 use std::process::Command;
 
@@ -128,6 +129,70 @@ pub fn bring_forward(chain: &[ProcInfo], project: Option<&str>) -> Result<String
             Ok(tr(
                 &format!("{app_name} mis au premier plan."),
                 &format!("{app_name} brought to the front."),
+            ))
+        }
+    }
+}
+
+fn copy_to_clipboard(text: &str) -> Result<(), String> {
+    use std::io::Write;
+    let mut child = Command::new("pbcopy")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    child
+        .stdin
+        .take()
+        .ok_or("pbcopy")?
+        .write_all(text.as_bytes())
+        .map_err(|error| error.to_string())?;
+    child.wait().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// Starts `command` in `folder`: typed into a new Terminal / iTerm2 window, or, for an editor,
+/// the folder is opened and the command copied for its integrated terminal.
+pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, String> {
+    let line = format!("cd {} && {command}", shell_single_quote(folder));
+    match host {
+        Host::Terminal => {
+            osascript(&format!(
+                "tell application \"Terminal\"\n activate\n do script {}\nend tell",
+                applescript_string(&line)
+            ))?;
+            Ok(tr(
+                &format!("Agent relancé dans un nouveau Terminal : {command}"),
+                &format!("Agent started again in a new Terminal: {command}"),
+            ))
+        }
+        Host::Iterm => {
+            osascript(&format!(
+                "tell application \"iTerm2\"\n activate\n set w to (create window with default profile)\n tell current session of w to write text {}\nend tell",
+                applescript_string(&line)
+            ))?;
+            Ok(tr(
+                &format!("Agent relancé dans un nouvel iTerm : {command}"),
+                &format!("Agent started again in a new iTerm window: {command}"),
+            ))
+        }
+        editor => {
+            let app = match editor {
+                Host::Cursor => "Cursor",
+                Host::Windsurf => "Windsurf",
+                _ => "Visual Studio Code",
+            };
+            Command::new("open")
+                .args(["-a", app, folder])
+                .status()
+                .map_err(|error| error.to_string())?;
+            copy_to_clipboard(command)?;
+            Ok(tr(
+                &format!(
+                    "{app} ouvert sur le projet. Commande copiée : colle-la dans son terminal ({command})."
+                ),
+                &format!(
+                    "{app} opened on the project. Command copied: paste it in its terminal ({command})."
+                ),
             ))
         }
     }

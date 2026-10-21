@@ -90,12 +90,27 @@ export function SettingsPage({ onExport, onClear, onMini }: { onExport: () => Pr
     <div className="settings-group">
       <h3>{t("Affichage", "Display")}</h3>
       <LanguageSetting />
+      <LaunchHostSetting />
       <div className="setting-row">
         <span><b>{t("Mode mini", "Mini mode")}</b><small>{t("Réduit l’app à une colonne dans un coin de l’écran, toujours visible, avec une carte par agent.", "Shrinks the app to an always-visible column in a corner of the screen, one card per agent.")}</small></span>
         <button className="button" onClick={onMini}>{t("Passer en mode mini", "Switch to mini mode")}</button>
       </div>
     </div>
   </section>;
+}
+
+function LaunchHostSetting() {
+  const [host, setHost] = usePreference<string>("launch-host", "terminal", (value): value is string => typeof value === "string");
+  return <label className="setting-row">
+    <span><b>{t("Relancer un agent arrêté dans…", "Start a stopped agent again in…")}</b><small>{t("Quand tu cliques sur « Aller à l’agent » et que l’agent n’est plus lancé, il est relancé dans son dossier avec la commande qui reprend sa session, dans le terminal où il était, sinon ici. Pour un éditeur, le dossier est ouvert et la commande copiée.", "When you click “Go to agent” and the agent is no longer running, it is started again in its folder with the command that resumes its session — in the terminal it was in, otherwise here. For an editor, the folder is opened and the command copied.")}</small></span>
+    <select value={host} onChange={(event) => setHost(event.target.value)}>
+      <option value="terminal">Terminal</option>
+      <option value="iterm">iTerm2</option>
+      <option value="code">VS Code</option>
+      <option value="cursor">Cursor</option>
+      <option value="windsurf">Windsurf</option>
+    </select>
+  </label>;
 }
 
 function LanguageSetting() {
