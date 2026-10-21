@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { isPossiblyTruncated, sessionMatchesRepository, summarizeSession, type SummaryEvent, type TurnBasis } from "./sessionSummary";
+import { formatDuration } from "./analytics";
+import { InfoTip } from "./Explain";
 
 type WindowCommits = {
   commits: Array<{ id: string; short_id: string; subject: string; author: string; committed_at: string }>;
@@ -8,9 +10,9 @@ type WindowCommits = {
 };
 
 const originLabels: Record<string, string> = {
-  provider: "fournisseur",
-  local_observation: "observation locale",
-  derived: "dérivé",
+  provider: "fourni",
+  local_observation: "observé",
+  derived: "calculé",
   estimated: "estimé"
 };
 
@@ -33,7 +35,7 @@ export function SessionSummaryPanel({ events, loadedEvents, hasMore, repository 
   const toolCalls = summary.tools.reduce((sum, tool) => sum + tool.count, 0);
 
   return <section className="session-summary" aria-label="Résumé de la session">
-    <div className="session-summary-heading"><h3>Résumé de session</h3><span className="count-badge">{summary.eventCount} événements</span></div>
+    <div className="session-summary-heading"><h3>Résumé de la session<InfoTip label="Comment lire ce résumé ?">Chaque chiffre porte une étiquette : « fourni » vient directement de l’agent, « calculé » est déduit par l’app à partir des événements, « estimé » est une approximation (le coût). Rien n’est inventé : une valeur absente est affichée comme telle.</InfoTip></h3><span className="count-badge">{summary.eventCount} événements</span></div>
     {truncated && <p className="summary-warning">Le début de cette session n’est peut-être pas chargé : les valeurs ci-dessous sont des minimums. Charge les événements plus anciens pour compléter.</p>}
     <div className="summary-grid">
       <SummaryStat label="Durée observée" value={formatDuration(summary.duration.value)} origin={summary.duration.origin} note={`${formatTime(summary.startedAt)} → ${formatTime(summary.endedAt)}`} />
@@ -41,7 +43,7 @@ export function SessionSummaryPanel({ events, loadedEvents, hasMore, repository 
       <SummaryStat label="Tours" value={String(summary.turns.count)} origin="derived" note={turnBasisLabels[summary.turns.basis]} />
       <SummaryStat label="Appels d’outils" value={String(toolCalls)} origin="derived" note={`${summary.tools.length} outil${summary.tools.length > 1 ? "s" : ""} distinct${summary.tools.length > 1 ? "s" : ""}`} />
       <SummaryStat label="Échecs" value={String(summary.failures.count)} origin="derived" note={summary.failures.tools.length ? summary.failures.tools.join(", ") : "Aucun échec remonté"} tone={summary.failures.count ? "failed" : undefined} />
-      <SummaryStat label="Tokens input / output" value={summary.tokens ? `${formatOptional(summary.tokens.input)} / ${formatOptional(summary.tokens.output)}` : "Non fournis"} origin={summary.tokens ? summary.tokens.origins : null} note={summary.tokens ? `Somme de ${summary.tokens.usageEvents} relevé${summary.tokens.usageEvents > 1 ? "s" : ""}${summary.tokens.cacheRead || summary.tokens.cacheWrite ? ` · cache : ${formatOptional(summary.tokens.cacheRead)} lus, ${formatOptional(summary.tokens.cacheWrite)} écrits` : ""}` : "Aucun compteur exposé par le connecteur"} />
+      <SummaryStat label="Tokens lus / écrits" value={summary.tokens ? `${formatOptional(summary.tokens.input)} / ${formatOptional(summary.tokens.output)}` : "Non fournis"} origin={summary.tokens ? summary.tokens.origins : null} note={summary.tokens ? `Somme de ${summary.tokens.usageEvents} relevé${summary.tokens.usageEvents > 1 ? "s" : ""}${summary.tokens.cacheRead || summary.tokens.cacheWrite ? ` · dont cache : ${formatOptional(summary.tokens.cacheRead)} relus, ${formatOptional(summary.tokens.cacheWrite)} mis en cache` : ""}` : "Aucun compteur exposé par le connecteur"} />
       {summary.cost
         ? <SummaryStat label="Coût estimé" value={formatUsd(summary.cost.value)} origin={summary.cost.origin} note={summary.cost.unpricedEvents ? `Partiel : ${summary.cost.unpricedEvents} relevé${summary.cost.unpricedEvents > 1 ? "s" : ""} sans tarif` : "Prix publics, cache inclus quand il est fourni"} />
         : <SummaryStat label="Coût estimé" value="Non estimé" origin={null} note={summary.tokens ? "Modèle absent de la table de prix" : "Pas de tokens à valoriser"} />}
@@ -112,15 +114,6 @@ function originTitle(origin: string) {
   return "Observée localement";
 }
 
-function formatDuration(ms: number) {
-  const seconds = Math.round(ms / 1000);
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  if (hours) return `${hours} h ${String(minutes).padStart(2, "0")} min`;
-  if (minutes) return `${minutes} min ${String(rest).padStart(2, "0")} s`;
-  return `${rest} s`;
-}
 
 function formatTime(iso: string) { return new Date(iso).toLocaleString("fr-FR"); }
 function formatOptional(value: number | null) { return value === null ? "—" : new Intl.NumberFormat("fr-FR").format(value); }

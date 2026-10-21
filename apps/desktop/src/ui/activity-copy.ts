@@ -115,8 +115,3 @@ export function narrateEvent(event: ActivityEvent): Narration | null {
       return null;
   }
 }
-
-/** Single-line copy kept for compact places (2D runner speech). */
-export function describeAgentAction(event: ActivityEvent): string | null {
-  return narrateEvent(event)?.text ?? null;
-}

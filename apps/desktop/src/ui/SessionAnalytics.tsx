@@ -4,6 +4,7 @@ import {
   tokensByAgent, topFiles, topTools, totalTokens, turnDurations, type AnalyticsRange
 } from "./analytics";
 import { BarList, LineChart, type BarRow } from "./charts";
+import { InfoTip } from "./Explain";
 import { Resizable } from "./Resizable";
 import { chartProviders, providers } from "./providers";
 import { sessionKey, type SessionEvent } from "./types";
@@ -103,33 +104,45 @@ export function SessionAnalytics({ events, range, onRange, dataset, repositoryOf
   ].filter(Boolean).join(" · ");
   const empty = range === "all" ? "Aucun événement chargé pour l’instant." : `Rien sur ${RANGE_LABELS[range]} — essaie « Tout ».`;
 
-  return <section className="analytics-panel" aria-labelledby="analytics-title">
-    <div className="analytics-heading">
-      <div><h2 id="analytics-title">Analyse des sessions</h2><p>{summary}</p>{dataset.truncated ? <p className="analytics-scope warn">Période limitée aux {formatCompact(dataset.events.length)} événements les plus récents sur {formatCompact(dataset.total)} enregistrés : choisis une période plus courte pour des totaux complets.</p> : dataset.source === "loaded" ? <p className="analytics-scope warn">Calculé sur les événements chargés à l’écran seulement (aperçu sans base locale).</p> : <p className="analytics-scope">Calculé sur toute la base locale pour cette période.</p>}</div>
-      <div className="range-filter" role="group" aria-label="Période analysée">{(Object.keys(RANGE_LABELS) as AnalyticsRange[]).map((key) => <button key={key} className={key === range ? "selected" : ""} aria-pressed={key === range} onClick={() => onRange(key)}>{RANGE_LABELS[key]}</button>)}</div>
-    </div>
-    <Resizable id="analytics-lines" defaultHeight={300} min={180} max={1000} label="les courbes d’activité et de tokens">
-    <div className="analytics-lines">
-      <ChartCard title="Activité des agents" note="événements reçus par tranche, par agent"><LineChart series={lines(data.activity)} axis={data.axis} format={formatCompact} unit="événements" emptyText={empty} /></ChartCard>
-      <ChartCard title="Tokens consommés" note="entrée + sortie, valeurs fournies par les connecteurs"><LineChart series={lines(data.tokenSeries)} axis={data.axis} format={formatCompact} unit="tokens" emptyText="Aucun compteur de tokens fourni sur cette période." /></ChartCard>
-    </div>
+  const scope = dataset.truncated
+    ? { tone: "warn", text: `Calculé sur les ${formatCompact(dataset.events.length)} événements les plus récents, sur ${formatCompact(dataset.total)} enregistrés pour cette période : choisis une période plus courte pour des totaux complets.` }
+    : dataset.source === "loaded"
+      ? { tone: "warn", text: "Aperçu : calculé seulement sur les événements affichés, sans la base locale." }
+      : { tone: "ok", text: "Calculé sur tous les événements enregistrés pendant cette période." };
+
+  return <section className="page-section" aria-labelledby="analytics-title">
+    <header className="section-header level-2">
+      <div className="section-header-text">
+        <h2 id="analytics-title">Analyse<InfoTip label="Comment lire l’analyse ?">Chaque graphique répond à une question sur la période choisie. Survole une courbe ou une barre pour voir les valeurs exactes. Les couleurs identifient toujours le même agent ; le rouge hachuré signale des échecs.</InfoTip></h2>
+        <p>{summary || "Aucune activité sur cette période."}</p>
+        <p className={`data-scope tone-${scope.tone}`}>{scope.text}</p>
+      </div>
+      <div className="section-header-actions">
+        <div className="segmented" role="group" aria-label="Période analysée">{(Object.keys(RANGE_LABELS) as AnalyticsRange[]).map((key) => <button key={key} aria-pressed={key === range} onClick={() => onRange(key)}>{RANGE_LABELS[key]}</button>)}</div>
+      </div>
+    </header>
+    <Resizable id="analytics-lines" defaultHeight={300} min={180} max={1000} label="les courbes">
+      <div className="chart-grid two">
+        <ChartCard title="Quand mes agents travaillent-ils ?" explain="Nombre d’événements reçus (actions, messages, fins de tour) par tranche de temps, un trait par agent. Un pic = une période de travail intense."><LineChart series={lines(data.activity)} axis={data.axis} format={formatCompact} unit="événements" emptyText={empty} /></ChartCard>
+        <ChartCard title="Combien de tokens consomment-ils ?" explain="Tokens traités par le modèle à chaque tranche (texte lu, y compris le cache, et texte écrit), tels que fournis par chaque agent. Les agents qui ne transmettent pas ce compteur n’apparaissent pas."><LineChart series={lines(data.tokenSeries)} axis={data.axis} format={formatCompact} unit="tokens" emptyText="Aucun compteur de tokens fourni sur cette période." /></ChartCard>
+      </div>
     </Resizable>
     <Resizable id="analytics-bars" defaultHeight={560} min={220} max={1600} label="les graphiques en barres">
-    <div className="analytics-bars">
-      <ChartCard title="Appels d’outils par agent" note="terminés, dont échecs"><BarList rows={callRows} format={formatCompact} legend={[{ label: "échecs (hachuré)", color: FAILURE, pattern: true }]} emptyText="Aucun appel d’outil terminé." /></ChartCard>
-      <ChartCard title="Outils les plus utilisés" note="appels lancés, échecs hachurés"><BarList rows={toolRows} format={formatCompact} emptyText="Aucun outil utilisé." /></ChartCard>
-      <ChartCard title="Fichiers les plus touchés" note="modifications et lectures"><BarList rows={fileRows} format={formatCompact} legend={[{ label: "modifiés", color: NEUTRAL_STRONG }, { label: "lus", color: NEUTRAL_SOFT }]} emptyText="Aucun chemin de fichier remonté." /></ChartCard>
-      <ChartCard title="Tokens par agent" note="entrée / sortie (hachuré)"><BarList rows={tokenRows} format={formatCompact} emptyText="Aucun compteur de tokens fourni." /></ChartCard>
-      <ChartCard title="Durée des tours" note="moyenne des durées rapportées"><BarList rows={turnRows} format={formatDuration} emptyText="Aucune durée de tour rapportée." /></ChartCard>
-      {repositoryOf && <ChartCard title="Dépôts les plus actifs" note="événements par dépôt, couleur = agent"><BarList rows={repositoryRows} format={formatCompact} emptyText="Aucun événement rattaché à un dépôt du workspace." /></ChartCard>}
-      <ChartCard title="Modèles utilisés" note="tokens et requêtes par modèle"><BarList rows={modelRows} format={formatCompact} emptyText="Aucun modèle rapporté." /></ChartCard>
-    </div>
+      <div className="chart-grid three">
+        <ChartCard title="Qui agit le plus, et qui échoue ?" explain="Actions terminées par agent. La partie rouge hachurée correspond aux actions en échec ; un taux élevé peut signaler un agent bloqué."><BarList rows={callRows} format={formatCompact} legend={[{ label: "échecs", color: FAILURE, pattern: true }]} emptyText="Aucune action terminée sur cette période." /></ChartCard>
+        <ChartCard title="Quels outils servent le plus ?" explain="Outils lancés par tous les agents (lecture, modification, commande…), avec leurs échecs en rouge hachuré."><BarList rows={toolRows} format={formatCompact} emptyText="Aucun outil utilisé sur cette période." /></ChartCard>
+        <ChartCard title="Quels fichiers sont les plus touchés ?" explain="Fichiers sur lesquels les agents ont travaillé : en clair les modifications, en foncé les simples lectures. Survole un nom pour voir son chemin complet."><BarList rows={fileRows} format={formatCompact} legend={[{ label: "modifiés", color: NEUTRAL_STRONG }, { label: "lus", color: NEUTRAL_SOFT }]} emptyText="Aucun fichier signalé sur cette période." /></ChartCard>
+        <ChartCard title="Qui consomme le plus de tokens ?" explain="Tokens par agent : partie pleine = texte lu par le modèle (contexte et cache), partie hachurée = texte écrit."><BarList rows={tokenRows} format={formatCompact} emptyText="Aucun compteur de tokens fourni." /></ChartCard>
+        <ChartCard title="Combien de temps dure un tour ?" explain="Durée moyenne d’un tour (de ton message jusqu’à la fin du travail de l’agent), quand l’agent la fournit. Survole une barre pour voir le tour le plus long."><BarList rows={turnRows} format={formatDuration} emptyText="Aucune durée de tour fournie sur cette période." /></ChartCard>
+        {repositoryOf && <ChartCard title="Sur quels dépôts ?" explain="Événements par dépôt du workspace, découpés par agent (une couleur par agent)."><BarList rows={repositoryRows} format={formatCompact} emptyText="Aucun événement rattaché à un dépôt du workspace." /></ChartCard>}
+        <ChartCard title="Quels modèles sont utilisés ?" explain="Modèles d’IA rapportés par les agents, classés par tokens consommés, avec le nombre de requêtes."><BarList rows={modelRows} format={formatCompact} emptyText="Aucun modèle rapporté sur cette période." /></ChartCard>
+      </div>
     </Resizable>
   </section>;
 }
 
-function ChartCard({ title, note, children }: { title: string; note: string; children: React.ReactNode }) {
-  return <div className="chart-card"><div className="chart-card-heading"><h3>{title}</h3><small>{note}</small></div>{children}</div>;
+function ChartCard({ title, explain, children }: { title: string; explain: string; children: React.ReactNode }) {
+  return <div className="chart-card"><h3>{title}<InfoTip label={`Explication : ${title}`}>{explain}</InfoTip></h3>{children}</div>;
 }
 
 function eventsPerRepository(events: SessionEvent[], repositoryOf: (event: SessionEvent) => WorkspaceRepository | null) {

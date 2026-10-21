@@ -1,25 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
-
-const STORAGE_PREFIX = "repowatcher.section-height.";
-
-function readHeight(id: string, fallback: number) {
-  try {
-    const stored = Number(window.localStorage.getItem(STORAGE_PREFIX + id));
-    return Number.isFinite(stored) && stored > 0 ? stored : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function storeHeight(id: string, height: number | null) {
-  try {
-    if (height === null) window.localStorage.removeItem(STORAGE_PREFIX + id);
-    else window.localStorage.setItem(STORAGE_PREFIX + id, String(Math.round(height)));
-  } catch {
-    /* the size preference is optional */
-  }
-}
+import { isNumber, readPreference, writePreference } from "./preferences";
 
 /**
  * A section whose height the user drags from its bottom handle (double-click resets, arrow keys
@@ -27,7 +8,7 @@ function storeHeight(id: string, height: number | null) {
  * per `id`. Children should fill the box (height: 100%).
  */
 export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, className = "", children }: { id: string; defaultHeight: number; min?: number; max?: number; label: string; className?: string; children: ReactNode }) {
-  const [height, setHeight] = useState(() => readHeight(id, defaultHeight));
+  const [height, setHeight] = useState(() => readPreference(`section-height.${id}`, defaultHeight, isNumber));
   const [maximized, setMaximized] = useState(false);
   const drag = useRef<{ startY: number; startHeight: number } | null>(null);
   const clamp = (value: number) => Math.min(max, Math.max(min, value));
@@ -42,7 +23,7 @@ export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, cla
   function commit(next: number) {
     const value = clamp(next);
     setHeight(value);
-    storeHeight(id, value);
+    writePreference(`section-height.${id}`, Math.round(value));
   }
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -59,7 +40,7 @@ export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, cla
   function onPointerUp() {
     if (!drag.current) return;
     drag.current = null;
-    storeHeight(id, height);
+    writePreference(`section-height.${id}`, Math.round(height));
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -74,7 +55,7 @@ export function Resizable({ id, defaultHeight, min = 140, max = 1400, label, cla
 
   function reset() {
     setHeight(defaultHeight);
-    storeHeight(id, null);
+    writePreference(`section-height.${id}`, null);
   }
 
   return <div className={`resizable ${maximized ? "is-maximized" : ""} ${className}`} style={{ "--section-height": `${height}px` } as CSSProperties} aria-label={label}>

@@ -28,12 +28,15 @@ export const EventFeed = memo(function EventFeed({ events }: { events: SessionEv
   return <div className="event-feed">{events.slice(0, limit).map((event) => <EventRow key={event.event_id} event={event} />)}{hasMore && <div ref={sentinel} aria-hidden="true" />}</div>;
 });
 
-const EventRow = memo(function EventRow({ event }: { event: SessionEvent }) {
+/** One event in plain language: when, which agent, what it did, with the raw record on demand. */
+export const EventRow = memo(function EventRow({ event, showDate = false }: { event: SessionEvent; showDate?: boolean }) {
   const provider = providerNames.get(event.provider);
   const narration = narrateEvent(event);
-  return <div className={`event-row ${narration?.tone ?? ""}`}><time>{new Date(event.occurred_at).toLocaleTimeString()}</time><span className="event-kind"><i style={{ background: provider?.color }} />{provider?.name ?? event.provider}</span><span className="event-detail">{narration ? <>{narration.text}{narration.detail && <small>{narration.detail}</small>}</> : event.kind.replaceAll("_", " ")}</span><EventPayload event={event} /></div>;
+  const at = new Date(event.occurred_at);
+  return <div className={`event-row tone-${narration?.tone ?? "info"}`}>
+    <time dateTime={event.occurred_at} title={at.toLocaleString("fr-FR")}>{showDate ? at.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : at.toLocaleTimeString("fr-FR")}</time>
+    <span className="event-agent"><i style={{ background: provider?.color }} />{provider?.name ?? event.provider}</span>
+    <span className="event-text">{narration ? <>{narration.text}{narration.detail && <small>{narration.detail}</small>}</> : event.kind.replaceAll("_", " ")}</span>
+    <details className="event-raw"><summary>données brutes</summary><pre>{JSON.stringify(event, null, 2)}</pre></details>
+  </div>;
 });
-
-export function EventPayload({ event }: { event: SessionEvent }) {
-  return <details className="event-payload"><summary>Journal complet</summary><pre>{JSON.stringify(event, null, 2)}</pre></details>;
-}

@@ -48,7 +48,7 @@ export function bucketSeries(events: SessionEvent[], providerKeys: string[], axi
 }
 
 /** Prompt tokens the model read, cached or not. */
-export const promptTokens = (event: SessionEvent) => (event.input_tokens?.value || 0) + (event.cache_read_tokens?.value || 0) + (event.cache_write_tokens?.value || 0);
+const promptTokens = (event: SessionEvent) => (event.input_tokens?.value || 0) + (event.cache_read_tokens?.value || 0) + (event.cache_write_tokens?.value || 0);
 export const totalTokens = (event: SessionEvent) => promptTokens(event) + (event.output_tokens?.value || 0);
 
 export type AgentToolCalls = { key: string; succeeded: number; failed: number };

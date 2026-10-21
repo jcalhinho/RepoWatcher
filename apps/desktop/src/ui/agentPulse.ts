@@ -10,7 +10,7 @@ import type { SessionEvent } from "./types";
  */
 export type PulseStatus = "blocked" | "stalled" | "waiting" | "working" | "idle" | "never";
 
-export const PULSE_ORDER: PulseStatus[] = ["blocked", "stalled", "waiting", "working", "idle", "never"];
+const PULSE_ORDER: PulseStatus[] = ["blocked", "stalled", "waiting", "working", "idle", "never"];
 
 export type PulseAction = Narration & { id: string; at: number };
 

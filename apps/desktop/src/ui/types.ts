@@ -32,7 +32,6 @@ export type RepositorySnapshot = {
   recent_commits: Array<{ short_id: string; subject: string; relative_time: string }>;
 };
 
-export function formatCount(value: number) { return new Intl.NumberFormat("fr-FR").format(value); }
 export function sessionKey(event: SessionEvent) { return `${event.provider}:${event.session_id}`; }
 export function compareEventsNewestFirst(a: SessionEvent, b: SessionEvent) {
   return b.occurred_at.localeCompare(a.occurred_at) || b.event_id.localeCompare(a.event_id);

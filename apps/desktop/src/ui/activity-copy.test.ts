@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { describeAgentAction, narrateEvent } from "./activity-copy";
+import { narrateEvent } from "./activity-copy";
+
+const describeAgentAction = (event: Parameters<typeof narrateEvent>[0]) => narrateEvent(event)?.text ?? null;
 
 describe("human-readable agent narration", () => {
   it("names the file an agent reads or edits, keeping only the end of the path", () => {
