@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+import { MiniView } from "./MiniView";
+import { enterMiniWindow, leaveMiniWindow, setMiniPinned } from "./miniWindow";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   Activity, Bot, ChevronDown, CircleHelp,
   FolderGit2, GitBranch, Plus,
-  Settings2, Sparkles, TerminalSquare
+  Minimize2, Settings2, Sparkles, TerminalSquare
 } from "lucide-react";
 import { SessionAnalytics } from "./SessionAnalytics";
 import { ConnectorSetupDialog, loadConnectorSetup, type ConnectorSetup } from "./ConnectorDialog";
@@ -92,6 +94,34 @@ export function App() {
     };
   }, [events]);
 
+  const [miniMode, setMiniMode] = useState(() => readFlag("repowatcher.mini-mode", false));
+  const [miniPinned, setMiniPinnedState] = useState(() => readFlag("repowatcher.mini-pinned", true));
+  const narrowWindow = useNarrowWindow();
+  useEffect(() => {
+    // Re-apply the corner placement when the app starts in mini mode.
+    if (miniMode) void enterMiniWindow(miniPinned);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function goMini() {
+    setMiniMode(true);
+    writeFlag("repowatcher.mini-mode", true);
+    void enterMiniWindow(miniPinned);
+  }
+
+  function leaveMini() {
+    setMiniMode(false);
+    writeFlag("repowatcher.mini-mode", false);
+    void leaveMiniWindow();
+  }
+
+  function toggleMiniPin() {
+    const next = !miniPinned;
+    setMiniPinnedState(next);
+    writeFlag("repowatcher.mini-pinned", next);
+    void setMiniPinned(next);
+  }
+
   async function selectRepository() {
     const selected = await open({ directory: true, multiple: false, title: "Choisir un dépôt Git" });
     if (typeof selected === "string") {
@@ -156,13 +186,17 @@ export function App() {
     }
   }
 
+  if (miniMode || narrowWindow) {
+    return <MiniView events={events} collectorState={collectorState} pinned={miniPinned} onTogglePin={toggleMiniPin} onExpand={leaveMini} />;
+  }
+
   return (
     <div className="app-shell">
       <main className="main-area">
         <header className="topbar">
           <div className="brand-lockup"><div className="brand-mark"><Activity size={18} strokeWidth={2.4} /></div><div><div className="brand-name">repowatcher</div><div className="brand-product">AGENT OBSERVER</div></div></div>
           <button className="workspace-switcher top-repository" onClick={selectRepository}><span className="workspace-icon"><FolderGit2 size={16} /></span><span className="workspace-copy"><b>{repoPath ? repoPath.split(/[\\/]/).filter(Boolean).at(-1) : "Aucun dépôt"}</b><small>{repoPath ? "Dépôt local sélectionné" : "Choisir un dépôt local"}</small></span><ChevronDown size={14} className="muted" /></button>
-          <nav className="workspace-nav" aria-label="Outils de l’espace de travail"><button onClick={() => showView("sessions")}><Activity size={15} /> Sessions <small>{stats.sessions}</small></button><button onClick={() => showView("repo-map")}><GitBranch size={15} /> Carte du dépôt</button><button onClick={() => setWorkspaceDialog("connectors")}><Plus size={15} /> Connecteurs</button><button onClick={() => setWorkspaceDialog("preferences")} aria-label="Préférences"><Settings2 size={16} /></button><button onClick={() => setWorkspaceDialog("help")} aria-label="Aide"><CircleHelp size={16} /></button></nav>
+          <nav className="workspace-nav" aria-label="Outils de l’espace de travail"><button onClick={() => showView("sessions")}><Activity size={15} /> Sessions <small>{stats.sessions}</small></button><button onClick={() => showView("repo-map")}><GitBranch size={15} /> Carte du dépôt</button><button onClick={() => setWorkspaceDialog("connectors")}><Plus size={15} /> Connecteurs</button><button onClick={() => setWorkspaceDialog("preferences")} aria-label="Préférences"><Settings2 size={16} /></button><button onClick={() => setWorkspaceDialog("help")} aria-label="Aide"><CircleHelp size={16} /></button><button className="mini-toggle" onClick={goMini} title="Réduire en colonne dans un coin de l’écran"><Minimize2 size={15} /> Mode mini</button></nav>
           <div className="topbar-actions"><div className="local-status"><span className={`status-led ${collectorState === "listening" ? "active" : collectorState.startsWith("error") ? "failed" : ""}`} /> Collecteur <span className={`status-pill ${collectorState.startsWith("error") ? "failed" : ""}`}>{collectorState === "listening" ? (events.length ? "ÉVÉNEMENTS REÇUS" : "EN ÉCOUTE LOCALE") : collectorState.startsWith("error") ? "PORT LOCAL INDISPONIBLE" : collectorState === "preview" ? "APERÇU WEB" : "DÉMARRAGE"}</span></div></div>
         </header>
 
@@ -209,3 +243,30 @@ export function App() {
 /** Overview panel order: provider table order, connectors only. */
 const OVERVIEW_CONNECTORS = ["claude_code", "codex", "cursor", "opencode", "gemini", "qwen"].map(providerById);
 
+
+function readFlag(key: string, fallback: boolean) {
+  try {
+    const stored = window.localStorage.getItem(key);
+    return stored === null ? fallback : stored === "1";
+  } catch {
+    return fallback;
+  }
+}
+
+function writeFlag(key: string, value: boolean) {
+  try { window.localStorage.setItem(key, value ? "1" : "0"); } catch { /* optional preference */ }
+}
+
+/** The dashboard needs width; a window narrowed by hand switches to the mini layout. */
+function useNarrowWindow() {
+  const query = "(max-width: 700px)";
+  const [narrow, setNarrow] = useState(() => window.matchMedia?.(query).matches ?? false);
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (!media) return;
+    const update = () => setNarrow(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return narrow;
+}

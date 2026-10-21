@@ -77,7 +77,8 @@ export function topTools(events: SessionEvent[], limit = 15): ToolUsage[] {
   return [...usage.values()].sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name)).slice(0, limit);
 }
 
-const WRITE_TOOL = /edit|write|patch|create|replace|multi_?edit|file_changed/i;
+/** Tool names that modify the file they target. */
+export const WRITE_TOOL = /edit|write|patch|create|replace|multi_?edit|file_changed/i;
 
 export type FileTouch = { path: string; reads: number; writes: number };
 
