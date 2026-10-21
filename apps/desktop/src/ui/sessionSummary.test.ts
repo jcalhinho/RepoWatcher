@@ -140,6 +140,60 @@ describe("estimated cost", () => {
     ])).toBeNull();
   });
 
+  it("prices Codex (OpenAI) cache reads and writes, and the long-context tier", () => {
+    const usage = (input: number, cacheRead: number, cacheWrite: number, output: number) =>
+      event("codex", "model_usage", 0, { model: provider("gpt-5.6-luna"), input_tokens: provider(input), output_tokens: provider(output), cache_read_tokens: provider(cacheRead), cache_write_tokens: provider(cacheWrite) });
+    // Short context: 0.2 $ input, 0.02 $ cached, 0.25 $ 30-minute write, 1.2 $ output.
+    expect(estimateCost([usage(100_000, 100_000, 50_000, 10_000)])!.value).toBeCloseTo((100_000 * 0.2 + 100_000 * 0.02 + 50_000 * 0.25 + 10_000 * 1.2) / 1e6, 12);
+    // 300K prompt tokens (cache included) > 272K: the whole request at the long-context rates.
+    expect(estimateCost([usage(100_000, 200_000, 0, 10_000)])!.value).toBeCloseTo((100_000 * 0.4 + 200_000 * 0.04 + 10_000 * 1.8) / 1e6, 12);
+    // Before GPT-5.6, cache writes cost plain input.
+    const older = estimateCost([event("codex", "model_usage", 0, { model: provider("gpt-5.3-codex"), input_tokens: provider(1_000_000), output_tokens: provider(1_000_000), cache_read_tokens: provider(1_000_000), cache_write_tokens: provider(1_000_000) })])!;
+    expect(older.value).toBeCloseTo(1.75 + 14 + 0.175 + 1.75, 10);
+  });
+
+  it("prices Gemini with its 200K prompt tier and dated price changes", () => {
+    const pro = (input: number, cached: number) => event("gemini_cli", "model_usage", 0, { model: provider("gemini-2.5-pro"), input_tokens: provider(input), output_tokens: provider(1_000_000), cache_read_tokens: provider(cached) });
+    expect(estimateCost([pro(100_000, 100_000)])!.value).toBeCloseTo((100_000 * 1.25 + 100_000 * 0.125) / 1e6 + 10, 10);
+    expect(estimateCost([pro(100_000, 150_000)])!.value).toBeCloseTo((100_000 * 2.5 + 150_000 * 0.25) / 1e6 + 15, 10);
+    const argon = (occurred_at: string) => event("gemini_cli", "model_usage", 0, { occurred_at, model: provider("gemini-4-argon"), input_tokens: provider(1_000_000), output_tokens: provider(0) });
+    expect(estimateCost([argon("2026-11-30T23:00:00Z")])!.value).toBeCloseTo(2, 10);
+    expect(estimateCost([argon("2026-12-01T00:00:00Z")])!.value).toBeCloseTo(4, 10);
+  });
+
+  it("prices Qwen models by the input size of each request, cache hits at 10 %", () => {
+    const coder = (input: number, cached: number) => event("qwen_code", "model_usage", 0, { model: provider("qwen3-coder-flash"), input_tokens: provider(input), output_tokens: provider(1_000), cache_read_tokens: provider(cached) });
+    expect(estimateCost([coder(10_000, 20_000)])!.value).toBeCloseTo((10_000 * 0.3 + 20_000 * 0.03 + 1_000 * 1.5) / 1e6, 12);
+    expect(estimateCost([coder(10_000, 30_000)])!.value).toBeCloseTo((10_000 * 0.5 + 30_000 * 0.05 + 1_000 * 2.5) / 1e6, 12);
+    // Cache-hit rate not published for Qwen3.8: such requests stay unpriced.
+    const max = estimateCost([
+      event("qwen_code", "model_usage", 0, { model: provider("qwen3.8-max"), input_tokens: provider(1_000_000), output_tokens: provider(0) }),
+      event("qwen_code", "model_usage", 1, { model: provider("qwen3.8-max"), input_tokens: provider(10), output_tokens: provider(0), cache_read_tokens: provider(5) })
+    ])!;
+    expect(max.value).toBeCloseTo(2, 10);
+    expect(max.unpricedEvents).toBe(1);
+  });
+
+  it("applies DeepSeek's off-peak discount from the request time", () => {
+    const pro = (occurred_at: string) => event("opencode", "model_usage", 0, { occurred_at, model: provider("deepseek-v4-pro"), input_tokens: provider(1_000_000), output_tokens: provider(1_000_000), cache_read_tokens: provider(1_000_000) });
+    const peak = 1.32 + 3.96 + 0.044;
+    expect(estimateCost([pro("2026-10-21T07:30:00Z")])!.value).toBeCloseTo(peak, 10); // Wednesday, peak
+    expect(estimateCost([pro("2026-10-21T05:00:00Z")])!.value).toBeCloseTo(peak / 2, 10); // between the two peak windows
+    expect(estimateCost([pro("2026-10-24T07:30:00Z")])!.value).toBeCloseTo(peak / 2, 10); // Saturday
+  });
+
+  it("prices Moonshot Kimi K3 cache writes apart from Kimi K2 ones", () => {
+    const kimi = (model: string) => event("opencode", "model_usage", 0, { model: provider(model), input_tokens: provider(1_000_000), output_tokens: provider(1_000_000), cache_read_tokens: provider(1_000_000), cache_write_tokens: provider(1_000_000) });
+    expect(estimateCost([kimi("moonshotai/kimi-k3")])!.value).toBeCloseTo(3 + 15 + 0.3 + 3, 10);
+    expect(estimateCost([kimi("kimi-k2.6")])!.value).toBeCloseTo(0.95 + 4 + 0.16 + 0.95, 10);
+  });
+
+  it("stops pricing a promotional rate past the date it was announced for", () => {
+    const sol = (occurred_at: string) => event("codex", "model_usage", 0, { occurred_at, model: provider("gpt-5.6-sol"), input_tokens: provider(100_000), output_tokens: provider(0) });
+    expect(estimateCost([sol("2026-11-21T12:00:00Z")])!.value).toBeCloseTo(0.4, 10);
+    expect(estimateCost([sol("2026-11-22T12:00:00Z")])).toBeNull();
+  });
+
   it("returns null when nothing can be priced", () => {
     expect(estimateCost([event("codex", "model_usage", 0, { model: provider("unknown"), input_tokens: provider(1), output_tokens: provider(1) })])).toBeNull();
     expect(estimateCost([event("codex", "tool_finished", 0)])).toBeNull();
@@ -150,7 +204,7 @@ describe("price table lookup", () => {
   it("normalizes provider prefixes and snapshot dates but never fuzzy-matches", () => {
     expect(normalizeModelId("anthropic/Claude-Sonnet-4-6")).toBe("claude-sonnet-4-6");
     expect(normalizeModelId("claude-haiku-4-5-20251001")).toBe("claude-haiku-4-5");
-    expect(findModelPrice("claude-opus-5-5")?.inputPerMTok).toBe(4);
+    expect(findModelPrice("claude-opus-5-5")?.tiers[0].inputPerMTok).toBe(4);
     expect(findModelPrice("claude-opus-5-5-preview")).toBeNull();
     expect(findModelPrice("claude-opus")).toBeNull();
   });

@@ -358,14 +358,7 @@ fn project_record(
                 let usage = payload.get("info")?.get("last_token_usage")?;
                 let mut event = event(context, EventKind::ModelUsage);
                 event.occurred_at = timestamp.unwrap_or_else(Utc::now);
-                event.input_tokens = usage
-                    .get("input_tokens")
-                    .and_then(Value::as_u64)
-                    .map(provider_value);
-                event.output_tokens = usage
-                    .get("output_tokens")
-                    .and_then(Value::as_u64)
-                    .map(provider_value);
+                project_token_usage(usage, &mut event);
                 event.model = context.model.as_ref().map(provider_string);
                 (event.input_tokens.is_some() || event.output_tokens.is_some()).then_some(event)
             }
@@ -430,6 +423,30 @@ fn project_record(
         };
     }
     None
+}
+
+/// OpenAI usage semantics (Responses API, prompt caching guide): `input_tokens`
+/// counts every prompt token, cache reads (`cached_input_tokens`) and cache
+/// writes (`cache_write_input_tokens`) included, so the uncached part is what
+/// remains. `output_tokens` already includes `reasoning_output_tokens`, which
+/// are billed as output: they are not added again.
+fn project_token_usage(usage: &Value, event: &mut SessionEvent) {
+    let count = |key: &str| usage.get(key).and_then(Value::as_u64);
+    let cache_read = count("cached_input_tokens");
+    let cache_write = count("cache_write_input_tokens");
+    event.input_tokens = count("input_tokens").map(|input| {
+        if cache_read.is_none() && cache_write.is_none() {
+            return provider_value(input);
+        }
+        let cached = cache_read.unwrap_or(0) + cache_write.unwrap_or(0);
+        Sourced {
+            value: input.saturating_sub(cached),
+            origin: DataOrigin::Derived,
+        }
+    });
+    event.cache_read_tokens = cache_read.map(provider_value);
+    event.cache_write_tokens = cache_write.map(provider_value);
+    event.output_tokens = count("output_tokens").map(provider_value);
 }
 
 fn project_completed_item(
@@ -568,6 +585,33 @@ mod tests {
             Some("gpt-test")
         );
         assert_eq!(event.input_tokens.unwrap().origin, DataOrigin::Provider);
+    }
+
+    #[test]
+    fn cached_prompt_tokens_are_split_from_uncached_input() {
+        let mut context = SessionContext {
+            id: "codex-session".into(),
+            model: Some("gpt-5.6-luna".into()),
+            ..SessionContext::default()
+        };
+        let record = json!({
+            "type": "event_msg",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "payload": { "type": "token_count", "info": { "last_token_usage": {
+                "input_tokens": 26391, "cached_input_tokens": 26112,
+                "cache_write_input_tokens": 200, "output_tokens": 117,
+                "reasoning_output_tokens": 40, "total_tokens": 26508
+            } } }
+        });
+        let event = project_record(&record, &mut context, false, false).unwrap();
+
+        let input = event.input_tokens.unwrap();
+        assert_eq!(input.value, 26391 - 26112 - 200);
+        assert_eq!(input.origin, DataOrigin::Derived);
+        assert_eq!(event.cache_read_tokens.map(|value| value.value), Some(26112));
+        assert_eq!(event.cache_write_tokens.map(|value| value.value), Some(200));
+        // Reasoning is part of output_tokens: not added a second time.
+        assert_eq!(event.output_tokens.map(|value| value.value), Some(117));
     }
 
     #[test]

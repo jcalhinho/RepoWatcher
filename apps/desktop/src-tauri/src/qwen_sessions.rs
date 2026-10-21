@@ -343,10 +343,22 @@ fn project_record(
                 return Vec::new();
             }
             let mut usage = at(event(context, EventKind::ModelUsage));
+            // `input_token_count` includes the cached part of the prompt
+            // (OpenAI-compatible `prompt_tokens`), and `output_token_count`
+            // already includes `thoughts_token_count`
+            // (total = input + output in Qwen Code's telemetry).
+            let cached = ui.get("cached_content_token_count").and_then(Value::as_u64);
             usage.input_tokens = ui
                 .get("input_token_count")
                 .and_then(Value::as_u64)
-                .map(provider_value);
+                .map(|input| match cached {
+                    Some(cached) if cached > 0 => Sourced {
+                        value: input.saturating_sub(cached),
+                        origin: DataOrigin::Derived,
+                    },
+                    _ => provider_value(input),
+                });
+            usage.cache_read_tokens = cached.map(provider_value);
             usage.output_tokens = ui
                 .get("output_token_count")
                 .and_then(Value::as_u64)
@@ -527,6 +539,22 @@ mod tests {
         assert_eq!(usage[0].input_tokens.as_ref().map(|value| value.value), Some(1200));
         assert_eq!(usage[0].output_tokens.as_ref().map(|value| value.value), Some(80));
         assert_eq!(usage[0].content, None);
+
+        let cached = record(
+            "system",
+            json!({ "subtype": "ui_telemetry", "systemPayload": { "uiEvent": {
+                "event.name": "qwen-code.api_response", "model": "deepseek-v4-pro",
+                "input_token_count": 22925, "output_token_count": 82,
+                "cached_content_token_count": 22784, "thoughts_token_count": 13,
+                "total_token_count": 23007
+            } } }),
+        );
+        let cached = project_record(&cached, &mut context, false, false);
+        let input = cached[0].input_tokens.as_ref().unwrap();
+        assert_eq!(input.value, 22925 - 22784);
+        assert_eq!(input.origin, DataOrigin::Derived);
+        assert_eq!(cached[0].cache_read_tokens.as_ref().map(|value| value.value), Some(22784));
+        assert_eq!(cached[0].output_tokens.as_ref().map(|value| value.value), Some(82));
 
         let tool_call = record(
             "system",

@@ -1,4 +1,4 @@
-import { findModelPrice, type ModelPrice, MODEL_PRICES } from "./pricing";
+import { findModelPrice, type ModelPrice, MODEL_PRICES, priceRequest } from "./pricing";
 import { providerById } from "./providers";
 
 const CODEX = providerById("codex").eventKey;
@@ -52,7 +52,7 @@ export type CostEstimate = {
   unpricedInputTokens: number;
   unpricedOutputTokens: number;
   unpricedModels: string[];
-  prices: Array<Pick<ModelPrice, "label" | "inputPerMTok" | "outputPerMTok" | "checkedOn" | "source">>;
+  prices: Array<Pick<ModelPrice, "label" | "checkedOn" | "source" | "note"> & { inputPerMTok: number; outputPerMTok: number }>;
 };
 
 export type SessionSummary = {
@@ -189,10 +189,12 @@ function collectModels(events: SummaryEvent[]): ModelSeen[] {
 }
 
 /**
- * Prices each usage event with its own model. An event is priced only when its
- * model is in the table and it carries both input and output counts; anything
- * else is reported as unpriced instead of being guessed. Returns null when no
- * event could be priced at all.
+ * Prices each usage event with its own model, at the price in force on the
+ * event's date: tier chosen by the request's prompt size, cache tokens at the
+ * vendor's cache rates, off-peak discount when the vendor has one. An event
+ * is priced only when its model is in the table and it carries both input and
+ * output counts; anything else is reported as unpriced instead of being
+ * guessed. Returns null when no event could be priced at all.
  */
 export function estimateCost(events: SummaryEvent[], prices: ModelPrice[] = MODEL_PRICES): CostEstimate | null {
   let value = 0;
@@ -204,24 +206,22 @@ export function estimateCost(events: SummaryEvent[], prices: ModelPrice[] = MODE
   const used = new Map<string, ModelPrice>();
   for (const event of events) {
     if (!event.input_tokens && !event.output_tokens && !event.cache_read_tokens && !event.cache_write_tokens) continue;
-    const price = event.model?.value ? findModelPrice(event.model.value, prices) : null;
+    const price = event.model?.value ? findModelPrice(event.model.value, prices, event.occurred_at) : null;
     const input = event.input_tokens?.value;
     const output = event.output_tokens?.value;
     const cacheRead = event.cache_read_tokens?.value ?? 0;
     const cacheWrite = event.cache_write_tokens?.value ?? 0;
-    // The long-context threshold counts every prompt token of the request, cached or not.
-    const withinBaseRate = price?.baseRateMaxInputTokens === undefined || (input ?? 0) + cacheRead + cacheWrite <= price.baseRateMaxInputTokens;
-    const cachePriced = (!cacheRead || price?.cacheReadPerMTok !== undefined) && (!cacheWrite || price?.cacheWritePerMTok !== undefined);
-    if (!price || input === undefined || output === undefined || !withinBaseRate || !cachePriced) {
+    const cost = price && input !== undefined && output !== undefined ? priceRequest(price, { input, output, cacheRead, cacheWrite }, event.occurred_at) : null;
+    if (!price || cost === null) {
       unpricedEvents += 1;
       unpricedInputTokens += (input ?? 0) + cacheRead + cacheWrite;
       unpricedOutputTokens += output ?? 0;
       unpricedModels.add(event.model?.value || "modèle non fourni");
       continue;
     }
-    value += (input * price.inputPerMTok + output * price.outputPerMTok + cacheRead * (price.cacheReadPerMTok ?? 0) + cacheWrite * (price.cacheWritePerMTok ?? 0)) / 1_000_000;
+    value += cost;
     pricedEvents += 1;
-    used.set(price.label, price);
+    used.set(`${price.label}|${price.effectiveFrom ?? ""}`, price);
   }
   if (!pricedEvents) return null;
   return {
@@ -233,7 +233,8 @@ export function estimateCost(events: SummaryEvent[], prices: ModelPrice[] = MODE
     unpricedInputTokens,
     unpricedOutputTokens,
     unpricedModels: [...unpricedModels].sort(),
-    prices: [...used.values()].map(({ label, inputPerMTok, outputPerMTok, checkedOn, source }) => ({ label, inputPerMTok, outputPerMTok, checkedOn, source }))
+    // Base (smallest-prompt, peak) rates; higher tiers and discounts are applied per event.
+    prices: [...used.values()].map(({ label, tiers, checkedOn, source, note }) => ({ label, inputPerMTok: tiers[0].inputPerMTok, outputPerMTok: tiers[0].outputPerMTok, checkedOn, source, note }))
   };
 }
 
