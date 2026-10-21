@@ -441,7 +441,8 @@ fn project_token_usage(tokens: &Value, usage: &mut SessionEvent) {
     usage.input_tokens = count(tokens.get("input")).map(provider_value);
     let cache = tokens.get("cache");
     usage.cache_read_tokens = count(cache.and_then(|cache| cache.get("read"))).map(provider_value);
-    usage.cache_write_tokens = count(cache.and_then(|cache| cache.get("write"))).map(provider_value);
+    usage.cache_write_tokens =
+        count(cache.and_then(|cache| cache.get("write"))).map(provider_value);
     let reasoning = count(tokens.get("reasoning")).unwrap_or(0);
     usage.output_tokens = count(tokens.get("output")).map(|output| {
         if reasoning == 0 {
@@ -527,9 +528,18 @@ mod tests {
         let mut usage = SessionEvent::new("ses", Provider::OpenCode, EventKind::ModelUsage);
         project_token_usage(&tokens, &mut usage);
 
-        assert_eq!(usage.input_tokens.as_ref().map(|value| value.value), Some(3641));
-        assert_eq!(usage.cache_read_tokens.as_ref().map(|value| value.value), Some(81422));
-        assert_eq!(usage.cache_write_tokens.as_ref().map(|value| value.value), Some(12));
+        assert_eq!(
+            usage.input_tokens.as_ref().map(|value| value.value),
+            Some(3641)
+        );
+        assert_eq!(
+            usage.cache_read_tokens.as_ref().map(|value| value.value),
+            Some(81422)
+        );
+        assert_eq!(
+            usage.cache_write_tokens.as_ref().map(|value| value.value),
+            Some(12)
+        );
         let output = usage.output_tokens.unwrap();
         assert_eq!(output.value, 976 + 609);
         assert_eq!(output.origin, DataOrigin::Derived);

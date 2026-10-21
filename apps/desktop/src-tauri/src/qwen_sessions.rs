@@ -332,7 +332,9 @@ fn project_record(
             finished.tool_name = Some(name);
             finished.file_path = file_path;
             finished.command = command;
-            finished.outcome = status.filter(|value| *value != "success").map(str::to_owned);
+            finished.outcome = status
+                .filter(|value| *value != "success")
+                .map(str::to_owned);
             vec![finished]
         }
         (Some("system"), Some("ui_telemetry")) => {
@@ -479,7 +481,10 @@ mod tests {
         assert_eq!(started[0].provider, Provider::QwenCode);
         assert_eq!(started[0].session_id, "qwen-session");
         assert_eq!(started[0].command, None);
-        assert_eq!(started[1].file_path.as_deref(), Some("/work/demo/src/main.rs"));
+        assert_eq!(
+            started[1].file_path.as_deref(),
+            Some("/work/demo/src/main.rs")
+        );
         assert_eq!(
             started[1].model.as_ref().map(|value| value.value.as_str()),
             Some("qwen3-coder")
@@ -493,7 +498,10 @@ mod tests {
         let failed = project_record(&failed, &mut context, true, true);
         assert_eq!(failed[0].kind, EventKind::ToolFailed);
         assert_eq!(failed[0].tool_name.as_deref(), Some("edit"));
-        assert_eq!(failed[0].file_path.as_deref(), Some("/work/demo/src/main.rs"));
+        assert_eq!(
+            failed[0].file_path.as_deref(),
+            Some("/work/demo/src/main.rs")
+        );
         assert_eq!(failed[0].outcome.as_deref(), Some("error"));
         assert_eq!(failed[0].content, None);
 
@@ -509,7 +517,10 @@ mod tests {
             "user",
             json!({ "provenance": "real_user", "message": { "role": "user", "parts": [ { "text": "private prompt" } ] } }),
         );
-        assert_eq!(project_record(&prompt, &mut context, false, false)[0].content, None);
+        assert_eq!(
+            project_record(&prompt, &mut context, false, false)[0].content,
+            None
+        );
         let captured = project_record(&prompt, &mut context, true, false);
         assert_eq!(captured[0].kind, EventKind::UserMessage);
         assert_eq!(captured[0].content.as_deref(), Some("private prompt"));
@@ -519,7 +530,10 @@ mod tests {
             json!({ "provenance": "system", "message": { "role": "user", "parts": [ { "text": "plumbing" } ] } }),
         );
         assert!(project_record(&injected, &mut context, true, false).is_empty());
-        let notification = record("user", json!({ "subtype": "notification", "systemPayload": { "displayText": "done" } }));
+        let notification = record(
+            "user",
+            json!({ "subtype": "notification", "systemPayload": { "displayText": "done" } }),
+        );
         assert!(project_record(&notification, &mut context, true, false).is_empty());
     }
 
@@ -536,8 +550,14 @@ mod tests {
         );
         let usage = project_record(&usage, &mut context, true, true);
         assert_eq!(usage[0].kind, EventKind::ModelUsage);
-        assert_eq!(usage[0].input_tokens.as_ref().map(|value| value.value), Some(1200));
-        assert_eq!(usage[0].output_tokens.as_ref().map(|value| value.value), Some(80));
+        assert_eq!(
+            usage[0].input_tokens.as_ref().map(|value| value.value),
+            Some(1200)
+        );
+        assert_eq!(
+            usage[0].output_tokens.as_ref().map(|value| value.value),
+            Some(80)
+        );
         assert_eq!(usage[0].content, None);
 
         let cached = record(
@@ -553,8 +573,17 @@ mod tests {
         let input = cached[0].input_tokens.as_ref().unwrap();
         assert_eq!(input.value, 22925 - 22784);
         assert_eq!(input.origin, DataOrigin::Derived);
-        assert_eq!(cached[0].cache_read_tokens.as_ref().map(|value| value.value), Some(22784));
-        assert_eq!(cached[0].output_tokens.as_ref().map(|value| value.value), Some(82));
+        assert_eq!(
+            cached[0]
+                .cache_read_tokens
+                .as_ref()
+                .map(|value| value.value),
+            Some(22784)
+        );
+        assert_eq!(
+            cached[0].output_tokens.as_ref().map(|value| value.value),
+            Some(82)
+        );
 
         let tool_call = record(
             "system",
@@ -570,7 +599,10 @@ mod tests {
         let turn = project_record(&turn, &mut context, true, true);
         assert_eq!(turn[0].kind, EventKind::Checkpoint);
         assert_eq!(turn[0].outcome.as_deref(), Some("turn-completed"));
-        assert_eq!(turn[0].duration_ms.as_ref().map(|value| value.value), Some(3500));
+        assert_eq!(
+            turn[0].duration_ms.as_ref().map(|value| value.value),
+            Some(3500)
+        );
         assert_eq!(turn[0].content, None);
     }
 
@@ -583,7 +615,10 @@ mod tests {
         let line = |text: &str| {
             format!(
                 "{}\n",
-                record("user", json!({ "provenance": "real_user", "message": { "parts": [ { "text": text } ] } }))
+                record(
+                    "user",
+                    json!({ "provenance": "real_user", "message": { "parts": [ { "text": text } ] } })
+                )
             )
         };
         fs::write(&path, line("old history")).unwrap();

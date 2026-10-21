@@ -608,7 +608,10 @@ mod tests {
         let input = event.input_tokens.unwrap();
         assert_eq!(input.value, 26391 - 26112 - 200);
         assert_eq!(input.origin, DataOrigin::Derived);
-        assert_eq!(event.cache_read_tokens.map(|value| value.value), Some(26112));
+        assert_eq!(
+            event.cache_read_tokens.map(|value| value.value),
+            Some(26112)
+        );
         assert_eq!(event.cache_write_tokens.map(|value| value.value), Some(200));
         // Reasoning is part of output_tokens: not added a second time.
         assert_eq!(event.output_tokens.map(|value| value.value), Some(117));

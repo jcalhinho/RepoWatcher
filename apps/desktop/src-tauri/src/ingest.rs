@@ -63,18 +63,36 @@ fn slug(name: &str) -> String {
     let slug: String = name
         .to_lowercase()
         .chars()
-        .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .split('-')
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("-");
-    if slug.is_empty() { "agent".into() } else { slug.chars().take(40).collect() }
+    if slug.is_empty() {
+        "agent".into()
+    } else {
+        slug.chars().take(40).collect()
+    }
 }
 
 pub fn list(connection: &Connection) -> rusqlite::Result<Vec<CustomConnector>> {
-    let mut statement = connection.prepare("SELECT id, name, color, token FROM custom_connectors ORDER BY created_at")?;
-    let rows = statement.query_map([], |row| Ok(CustomConnector { id: row.get(0)?, name: row.get(1)?, color: row.get(2)?, token: row.get(3)? }))?;
+    let mut statement = connection
+        .prepare("SELECT id, name, color, token FROM custom_connectors ORDER BY created_at")?;
+    let rows = statement.query_map([], |row| {
+        Ok(CustomConnector {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            color: row.get(2)?,
+            token: row.get(3)?,
+        })
+    })?;
     rows.collect()
 }
 
@@ -91,8 +109,17 @@ pub fn create(connection: &Connection, name: &str) -> Result<CustomConnector, St
         id = format!("{base}-{suffix}");
         suffix += 1;
     }
-    let color = COLORS.get(existing.len()).copied().unwrap_or("#7d8aa3").to_owned();
-    let connector = CustomConnector { id, name: name.to_owned(), color, token: Uuid::new_v4().simple().to_string() };
+    let color = COLORS
+        .get(existing.len())
+        .copied()
+        .unwrap_or("#7d8aa3")
+        .to_owned();
+    let connector = CustomConnector {
+        id,
+        name: name.to_owned(),
+        color,
+        token: Uuid::new_v4().simple().to_string(),
+    };
     connection
         .execute(
             "INSERT INTO custom_connectors (id, name, color, token, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -103,35 +130,61 @@ pub fn create(connection: &Connection, name: &str) -> Result<CustomConnector, St
 }
 
 pub fn delete(connection: &Connection, id: &str) -> Result<(), String> {
-    connection.execute("DELETE FROM custom_connectors WHERE id = ?1", [id]).map(|_| ()).map_err(|error| error.to_string())
+    connection
+        .execute("DELETE FROM custom_connectors WHERE id = ?1", [id])
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 pub fn connector_for_token(connection: &Connection, token: &str) -> Option<String> {
-    connection.query_row("SELECT id FROM custom_connectors WHERE token = ?1", [token], |row| row.get(0)).optional().ok().flatten()
+    connection
+        .query_row(
+            "SELECT id FROM custom_connectors WHERE token = ?1",
+            [token],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
 }
 
 /// Parses a request body (one event or an array) into stored events, or explains what is wrong.
-pub fn parse(body: &[u8], connector_id: &str, capture_prompts: bool, capture_commands: bool) -> Result<Vec<SessionEvent>, String> {
-    let value: serde_json::Value = serde_json::from_slice(body).map_err(|error| format!("JSON invalide : {error}"))?;
+pub fn parse(
+    body: &[u8],
+    connector_id: &str,
+    capture_prompts: bool,
+    capture_commands: bool,
+) -> Result<Vec<SessionEvent>, String> {
+    let value: serde_json::Value =
+        serde_json::from_slice(body).map_err(|error| format!("JSON invalide : {error}"))?;
     let items = match value {
         serde_json::Value::Array(items) => items,
         object @ serde_json::Value::Object(_) => vec![object],
         _ => return Err("Le corps doit être un événement JSON ou un tableau d’événements.".into()),
     };
     if items.is_empty() || items.len() > MAX_EVENTS_PER_REQUEST {
-        return Err(format!("Envoie entre 1 et {MAX_EVENTS_PER_REQUEST} événements par requête."));
+        return Err(format!(
+            "Envoie entre 1 et {MAX_EVENTS_PER_REQUEST} événements par requête."
+        ));
     }
     items
         .into_iter()
         .enumerate()
         .map(|(index, item)| {
-            let incoming: IncomingEvent = serde_json::from_value(item).map_err(|error| format!("Événement {index} : {error}"))?;
-            to_event(incoming, connector_id, capture_prompts, capture_commands).map_err(|error| format!("Événement {index} : {error}"))
+            let incoming: IncomingEvent = serde_json::from_value(item)
+                .map_err(|error| format!("Événement {index} : {error}"))?;
+            to_event(incoming, connector_id, capture_prompts, capture_commands)
+                .map_err(|error| format!("Événement {index} : {error}"))
         })
         .collect()
 }
 
-fn to_event(incoming: IncomingEvent, connector_id: &str, capture_prompts: bool, capture_commands: bool) -> Result<SessionEvent, String> {
+fn to_event(
+    incoming: IncomingEvent,
+    connector_id: &str,
+    capture_prompts: bool,
+    capture_commands: bool,
+) -> Result<SessionEvent, String> {
     let session_id = incoming.session_id.trim();
     if session_id.is_empty() || session_id.len() > 200 {
         return Err("`session_id` doit faire de 1 à 200 caractères.".into());
@@ -139,19 +192,27 @@ fn to_event(incoming: IncomingEvent, connector_id: &str, capture_prompts: bool, 
     let mut event = SessionEvent::new(session_id, Provider::Custom, incoming.kind);
     event.agent = Some(connector_id.to_owned());
     if let Some(at) = incoming.occurred_at {
-        event.occurred_at = DateTime::parse_from_rfc3339(&at).map_err(|_| format!("`occurred_at` n’est pas une date RFC 3339 : {at}"))?.with_timezone(&Utc);
+        event.occurred_at = DateTime::parse_from_rfc3339(&at)
+            .map_err(|_| format!("`occurred_at` n’est pas une date RFC 3339 : {at}"))?
+            .with_timezone(&Utc);
     }
     // A sender-chosen id makes retries idempotent: the same id updates the same stored event.
     if let Some(id) = incoming.event_id.filter(|id| !id.is_empty()) {
         event.event_id = Uuid::new_v5(&NAMESPACE, format!("{connector_id}:{id}").as_bytes());
     }
-    let sourced = |value: u64| Sourced { value, origin: DataOrigin::Provider };
+    let sourced = |value: u64| Sourced {
+        value,
+        origin: DataOrigin::Provider,
+    };
     event.project_path = incoming.project_path;
     event.tool_name = incoming.tool_name;
     event.file_path = incoming.file_path;
     event.command = incoming.command.filter(|_| capture_commands);
     event.content = incoming.content.filter(|_| capture_prompts);
-    event.model = incoming.model.map(|value| Sourced { value, origin: DataOrigin::Provider });
+    event.model = incoming.model.map(|value| Sourced {
+        value,
+        origin: DataOrigin::Provider,
+    });
     event.outcome = incoming.outcome;
     event.input_tokens = incoming.input_tokens.map(sourced);
     event.output_tokens = incoming.output_tokens.map(sourced);
@@ -180,7 +241,10 @@ mod tests {
         assert_eq!(second.id, "mon-agent-2");
         assert_ne!(first.token, second.token);
         assert_ne!(first.color, second.color);
-        assert_eq!(connector_for_token(&connection, &second.token).as_deref(), Some("mon-agent-2"));
+        assert_eq!(
+            connector_for_token(&connection, &second.token).as_deref(),
+            Some("mon-agent-2")
+        );
         delete(&connection, "mon-agent").unwrap();
         assert_eq!(connector_for_token(&connection, &first.token), None);
         assert!(create(&connection, "  ").is_err());
@@ -195,20 +259,69 @@ mod tests {
         ]"#;
         let events = parse(body, "my-agent", false, false).unwrap();
         assert_eq!(events.len(), 3);
-        assert!(events.iter().all(|event| event.provider == Provider::Custom && event.agent.as_deref() == Some("my-agent")));
+        assert!(events.iter().all(|event| event.provider == Provider::Custom
+            && event.agent.as_deref() == Some("my-agent")));
         assert_eq!(events[0].command, None);
         assert_eq!(events[2].content, None);
-        assert_eq!(events[1].input_tokens.as_ref().map(|value| value.value), Some(120));
-        assert_eq!(events[0].event_id, parse(body, "my-agent", false, false).unwrap()[0].event_id);
-        assert_eq!(parse(br#"{"session_id": "s", "kind": "user_message", "content": "kept"}"#, "a", true, false).unwrap()[0].content.as_deref(), Some("kept"));
+        assert_eq!(
+            events[1].input_tokens.as_ref().map(|value| value.value),
+            Some(120)
+        );
+        assert_eq!(
+            events[0].event_id,
+            parse(body, "my-agent", false, false).unwrap()[0].event_id
+        );
+        assert_eq!(
+            parse(
+                br#"{"session_id": "s", "kind": "user_message", "content": "kept"}"#,
+                "a",
+                true,
+                false
+            )
+            .unwrap()[0]
+                .content
+                .as_deref(),
+            Some("kept")
+        );
     }
 
     #[test]
     fn explains_what_is_wrong() {
-        assert!(parse(b"nope", "a", false, false).unwrap_err().contains("JSON invalide"));
-        assert!(parse(br#"{"session_id": "s", "kind": "dancing"}"#, "a", false, false).unwrap_err().contains("Événement 0"));
-        assert!(parse(br#"{"session_id": "s", "kind": "checkpoint", "tokens": 3}"#, "a", false, false).unwrap_err().contains("tokens"));
-        assert!(parse(br#"{"session_id": "s", "kind": "checkpoint", "occurred_at": "hier"}"#, "a", false, false).unwrap_err().contains("RFC 3339"));
+        assert!(
+            parse(b"nope", "a", false, false)
+                .unwrap_err()
+                .contains("JSON invalide")
+        );
+        assert!(
+            parse(
+                br#"{"session_id": "s", "kind": "dancing"}"#,
+                "a",
+                false,
+                false
+            )
+            .unwrap_err()
+            .contains("Événement 0")
+        );
+        assert!(
+            parse(
+                br#"{"session_id": "s", "kind": "checkpoint", "tokens": 3}"#,
+                "a",
+                false,
+                false
+            )
+            .unwrap_err()
+            .contains("tokens")
+        );
+        assert!(
+            parse(
+                br#"{"session_id": "s", "kind": "checkpoint", "occurred_at": "hier"}"#,
+                "a",
+                false,
+                false
+            )
+            .unwrap_err()
+            .contains("RFC 3339")
+        );
         assert!(parse(b"[]", "a", false, false).is_err());
     }
 }

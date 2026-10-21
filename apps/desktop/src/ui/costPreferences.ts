@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { isBoolean, readPreference, usePreference } from "./preferences";
 
 // Many people use these agents through a subscription (Claude Max, ChatGPT,
@@ -24,4 +25,9 @@ export function useSubscription(eventKey: string) {
 /** Heading for the API-price amount of this agent. */
 export function costLabel(eventKey: string, onSubscription = isOnSubscription(eventKey)): CostLabel {
   return onSubscription ? "Valeur consommée" : "Coût estimé";
+}
+
+/** The label shown to the user, in their language. */
+export function costLabelText(eventKey: string, onSubscription = isOnSubscription(eventKey)) {
+  return onSubscription ? t("Valeur consommée", "Value consumed") : t("Coût estimé", "Estimated cost");
 }

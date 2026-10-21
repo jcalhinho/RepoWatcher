@@ -184,12 +184,19 @@ mod tests {
     #[test]
     fn events_without_cache_fields_still_deserialize() {
         let mut event = SessionEvent::new("s", Provider::ClaudeCode, EventKind::ModelUsage);
-        event.cache_read_tokens = Some(Sourced { value: 7, origin: DataOrigin::Provider });
+        event.cache_read_tokens = Some(Sourced {
+            value: 7,
+            origin: DataOrigin::Provider,
+        });
         let mut json: serde_json::Value = serde_json::to_value(&event).unwrap();
         json.as_object_mut().unwrap().remove("cache_read_tokens");
         let parsed: SessionEvent = serde_json::from_value(json).unwrap();
         assert_eq!(parsed.cache_read_tokens, None);
-        assert!(!serde_json::to_string(&parsed).unwrap().contains("cache_write_tokens"));
+        assert!(
+            !serde_json::to_string(&parsed)
+                .unwrap()
+                .contains("cache_write_tokens")
+        );
     }
 
     #[test]

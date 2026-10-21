@@ -47,7 +47,11 @@ pub struct TranscriptMonitor {
 
 impl TranscriptMonitor {
     pub fn new(root: PathBuf) -> Self {
-        Self { root, cursors: HashMap::new(), started_at: SystemTime::now() }
+        Self {
+            root,
+            cursors: HashMap::new(),
+            started_at: SystemTime::now(),
+        }
     }
 
     pub fn poll(&mut self) -> Vec<SessionEvent> {
@@ -125,8 +129,12 @@ fn recent_transcripts(root: &Path) -> Vec<(PathBuf, u64)> {
             if path.extension().and_then(|extension| extension.to_str()) != Some("jsonl") {
                 continue;
             }
-            let Ok(metadata) = entry.metadata() else { continue };
-            let Ok(modified) = metadata.modified() else { continue };
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            let Ok(modified) = metadata.modified() else {
+                continue;
+            };
             if metadata.is_file() && DateTime::<Utc>::from(modified) >= cutoff {
                 files.push((path, metadata.len()));
             }
@@ -136,12 +144,19 @@ fn recent_transcripts(root: &Path) -> Vec<(PathBuf, u64)> {
 }
 
 fn session_id_from_path(path: &Path) -> String {
-    path.file_stem().and_then(|stem| stem.to_str()).unwrap_or("claude-session").to_owned()
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("claude-session")
+        .to_owned()
 }
 
 fn read_appended_records(path: &Path, cursor: &mut Cursor) -> Vec<SessionEvent> {
-    let Ok(mut file) = fs::File::open(path) else { return Vec::new() };
-    let Ok(metadata) = file.metadata() else { return Vec::new() };
+    let Ok(mut file) = fs::File::open(path) else {
+        return Vec::new();
+    };
+    let Ok(metadata) = file.metadata() else {
+        return Vec::new();
+    };
     if metadata.len() < cursor.offset {
         cursor.offset = 0;
         cursor.pending.clear();
@@ -150,7 +165,11 @@ fn read_appended_records(path: &Path, cursor: &mut Cursor) -> Vec<SessionEvent> 
         return Vec::new();
     }
     let mut appended = Vec::new();
-    if file.take(8 * 1024 * 1024).read_to_end(&mut appended).is_err() {
+    if file
+        .take(8 * 1024 * 1024)
+        .read_to_end(&mut appended)
+        .is_err()
+    {
         return Vec::new();
     }
     cursor.offset += appended.len() as u64;
@@ -187,20 +206,29 @@ fn project_record(record: &Value, context: &mut SessionContext) -> Vec<SessionEv
     // The first timestamped record of a transcript created while the observer runs.
     if !context.started && occurred_at.is_some() && context.project_path.is_some() {
         context.started = true;
-        let mut started = SessionEvent::new(&context.id, Provider::ClaudeCode, EventKind::SessionStarted);
+        let mut started =
+            SessionEvent::new(&context.id, Provider::ClaudeCode, EventKind::SessionStarted);
         started.event_id = stable_id(&context.id, "session-started");
         started.occurred_at = occurred_at.unwrap_or_else(Utc::now);
         started.project_path = context.project_path.clone();
         events.push(started);
     }
 
-    if record.get("type").and_then(Value::as_str) != Some("assistant") || record.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+    if record.get("type").and_then(Value::as_str) != Some("assistant")
+        || record.get("isSidechain").and_then(Value::as_bool) == Some(true)
+    {
         return events;
     }
-    let Some(message) = record.get("message") else { return events };
-    let Some(usage) = message.get("usage") else { return events };
+    let Some(message) = record.get("message") else {
+        return events;
+    };
+    let Some(usage) = message.get("usage") else {
+        return events;
+    };
     // A response is written once per content block, each copy repeating the same usage.
-    let Some(message_id) = message.get("id").and_then(Value::as_str) else { return events };
+    let Some(message_id) = message.get("id").and_then(Value::as_str) else {
+        return events;
+    };
     if !context.seen_messages.insert(message_id.to_owned()) {
         return events;
     }
@@ -208,7 +236,10 @@ fn project_record(record: &Value, context: &mut SessionContext) -> Vec<SessionEv
         context.seen_messages.clear();
         context.seen_messages.insert(message_id.to_owned());
     }
-    let model = message.get("model").and_then(Value::as_str).filter(|model| !model.starts_with('<'));
+    let model = message
+        .get("model")
+        .and_then(Value::as_str)
+        .filter(|model| !model.starts_with('<'));
     let count = |key: &str| usage.get(key).and_then(Value::as_u64);
     let (input, output, cache_read, cache_write) = (
         count("input_tokens"),
@@ -216,14 +247,21 @@ fn project_record(record: &Value, context: &mut SessionContext) -> Vec<SessionEv
         count("cache_read_input_tokens"),
         count("cache_creation_input_tokens"),
     );
-    if [input, output, cache_read, cache_write].iter().all(|value| value.unwrap_or(0) == 0) {
+    if [input, output, cache_read, cache_write]
+        .iter()
+        .all(|value| value.unwrap_or(0) == 0)
+    {
         return events;
     }
-    let mut usage_event = SessionEvent::new(&context.id, Provider::ClaudeCode, EventKind::ModelUsage);
+    let mut usage_event =
+        SessionEvent::new(&context.id, Provider::ClaudeCode, EventKind::ModelUsage);
     usage_event.event_id = stable_id(&context.id, message_id);
     usage_event.occurred_at = occurred_at.unwrap_or_else(Utc::now);
     usage_event.project_path = context.project_path.clone();
-    usage_event.model = model.map(|value| Sourced { value: value.to_owned(), origin: DataOrigin::Provider });
+    usage_event.model = model.map(|value| Sourced {
+        value: value.to_owned(),
+        origin: DataOrigin::Provider,
+    });
     usage_event.input_tokens = input.map(provider_value);
     usage_event.output_tokens = output.map(provider_value);
     usage_event.cache_read_tokens = cache_read.map(provider_value);
@@ -233,11 +271,17 @@ fn project_record(record: &Value, context: &mut SessionContext) -> Vec<SessionEv
 }
 
 fn stable_id(session_id: &str, key: &str) -> Uuid {
-    Uuid::new_v5(&EVENT_NAMESPACE, format!("claude-transcript:{session_id}:{key}").as_bytes())
+    Uuid::new_v5(
+        &EVENT_NAMESPACE,
+        format!("claude-transcript:{session_id}:{key}").as_bytes(),
+    )
 }
 
 fn provider_value(value: u64) -> Sourced<u64> {
-    Sourced { value, origin: DataOrigin::Provider }
+    Sourced {
+        value,
+        origin: DataOrigin::Provider,
+    }
 }
 
 #[cfg(test)]
@@ -252,13 +296,19 @@ mod tests {
             "message": { "id": message_id, "model": "claude-opus-5-5", "content": [{ "type": "text", "text": "must not be retained" }],
                 "usage": { "input_tokens": 3, "output_tokens": 120, "cache_read_input_tokens": 50_000, "cache_creation_input_tokens": 900 } }
         });
-        record.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        record
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
         record
     }
 
     #[test]
     fn counts_each_response_once_with_cache_tokens_apart() {
-        let mut context = SessionContext { started: true, ..SessionContext::default() };
+        let mut context = SessionContext {
+            started: true,
+            ..SessionContext::default()
+        };
         let first = project_record(&assistant("msg_1", json!({})), &mut context);
         let repeated = project_record(&assistant("msg_1", json!({})), &mut context);
         assert_eq!(first.len(), 1);
@@ -267,19 +317,43 @@ mod tests {
         assert_eq!(usage.kind, EventKind::ModelUsage);
         assert_eq!(usage.provider, Provider::ClaudeCode);
         assert_eq!(usage.session_id, "claude-session");
-        assert_eq!(usage.input_tokens.as_ref().map(|value| value.value), Some(3));
-        assert_eq!(usage.output_tokens.as_ref().map(|value| value.value), Some(120));
-        assert_eq!(usage.cache_read_tokens.as_ref().map(|value| value.value), Some(50_000));
-        assert_eq!(usage.cache_write_tokens.as_ref().map(|value| value.value), Some(900));
-        assert_eq!(usage.model.as_ref().map(|value| value.value.as_str()), Some("claude-opus-5-5"));
+        assert_eq!(
+            usage.input_tokens.as_ref().map(|value| value.value),
+            Some(3)
+        );
+        assert_eq!(
+            usage.output_tokens.as_ref().map(|value| value.value),
+            Some(120)
+        );
+        assert_eq!(
+            usage.cache_read_tokens.as_ref().map(|value| value.value),
+            Some(50_000)
+        );
+        assert_eq!(
+            usage.cache_write_tokens.as_ref().map(|value| value.value),
+            Some(900)
+        );
+        assert_eq!(
+            usage.model.as_ref().map(|value| value.value.as_str()),
+            Some("claude-opus-5-5")
+        );
         assert_eq!(usage.content, None);
         assert_eq!(usage.event_id, stable_id("claude-session", "msg_1"));
     }
 
     #[test]
     fn ignores_subagent_records_and_synthetic_empty_responses() {
-        let mut context = SessionContext { started: true, ..SessionContext::default() };
-        assert!(project_record(&assistant("msg_2", json!({ "isSidechain": true })), &mut context).is_empty());
+        let mut context = SessionContext {
+            started: true,
+            ..SessionContext::default()
+        };
+        assert!(
+            project_record(
+                &assistant("msg_2", json!({ "isSidechain": true })),
+                &mut context
+            )
+            .is_empty()
+        );
         let synthetic = json!({ "type": "assistant", "sessionId": "s", "timestamp": "2026-10-21T08:00:00Z",
             "message": { "id": "msg_3", "model": "<synthetic>", "usage": { "input_tokens": 0, "output_tokens": 0 } } });
         assert!(project_record(&synthetic, &mut context).is_empty());
@@ -294,11 +368,18 @@ mod tests {
         monitor.started_at = SystemTime::now() - StdDuration::from_secs(60);
         let path = project.join("claude-session.jsonl");
         let user = json!({ "type": "user", "sessionId": "claude-session", "cwd": "/work/demo", "timestamp": "2026-10-21T07:59:00Z", "message": { "content": "private prompt" } });
-        fs::write(&path, format!("{user}\n{}\n", assistant("msg_4", json!({})))).unwrap();
+        fs::write(
+            &path,
+            format!("{user}\n{}\n", assistant("msg_4", json!({}))),
+        )
+        .unwrap();
         let events = monitor.poll();
         let again = monitor.poll();
         let _ = fs::remove_dir_all(&root);
-        assert_eq!(events.iter().map(|event| event.kind).collect::<Vec<_>>(), vec![EventKind::SessionStarted, EventKind::ModelUsage]);
+        assert_eq!(
+            events.iter().map(|event| event.kind).collect::<Vec<_>>(),
+            vec![EventKind::SessionStarted, EventKind::ModelUsage]
+        );
         assert_eq!(events[0].project_path.as_deref(), Some("/work/demo"));
         assert!(events.iter().all(|event| event.content.is_none()));
         assert!(again.is_empty());

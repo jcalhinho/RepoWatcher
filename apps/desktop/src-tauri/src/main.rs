@@ -3,8 +3,8 @@
 mod claude_transcripts;
 mod codex_rollout;
 mod focus;
-mod ingest;
 mod gemini_sessions;
+mod ingest;
 mod opencode_sessions;
 mod qwen_sessions;
 mod workspace;
@@ -282,7 +282,11 @@ const PURGE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60 * 
 
 fn retention_days(connection: &Connection) -> i64 {
     connection
-        .query_row("SELECT value FROM preferences WHERE key='retention_days'", [], |row| row.get::<_, i64>(0))
+        .query_row(
+            "SELECT value FROM preferences WHERE key='retention_days'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
         .optional()
         .ok()
         .flatten()
@@ -296,7 +300,10 @@ fn purge_expired_events(connection: &Connection, days: i64) -> rusqlite::Result<
     }
     // Same RFC 3339 shape as the stored `occurred_at`, so text comparison orders correctly.
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
-    connection.execute("DELETE FROM session_events WHERE occurred_at < ?1", [cutoff])
+    connection.execute(
+        "DELETE FROM session_events WHERE occurred_at < ?1",
+        [cutoff],
+    )
 }
 
 #[tauri::command]
@@ -307,7 +314,10 @@ fn retention_policy(state: tauri::State<'_, CollectorState>) -> Result<i64, Stri
 
 /// Saves the retention period and applies it at once; returns the number of events removed.
 #[tauri::command]
-fn update_retention_policy(state: tauri::State<'_, CollectorState>, days: i64) -> Result<usize, String> {
+fn update_retention_policy(
+    state: tauri::State<'_, CollectorState>,
+    days: i64,
+) -> Result<usize, String> {
     if !(0..=3650).contains(&days) {
         return Err("Durée de conservation invalide.".into());
     }
@@ -403,7 +413,11 @@ fn load_analytics_events(
             events.push(event);
         }
     }
-    Ok(AnalyticsEvents { truncated: total > events.len(), total, events })
+    Ok(AnalyticsEvents {
+        truncated: total > events.len(),
+        total,
+        events,
+    })
 }
 
 #[tauri::command]
@@ -477,10 +491,16 @@ async fn focus_agent(
     lang: Option<String>,
 ) -> Result<focus::FocusOutcome, String> {
     focus::set_language(lang.as_deref());
-    let known_pid = state.agent_pids.lock().ok().and_then(|pids| pids.get(&session_id).copied());
-    tauri::async_runtime::spawn_blocking(move || focus::focus_agent(&provider, known_pid, project_path.as_deref()))
-        .await
-        .map_err(|error| error.to_string())
+    let known_pid = state
+        .agent_pids
+        .lock()
+        .ok()
+        .and_then(|pids| pids.get(&session_id).copied());
+    tauri::async_runtime::spawn_blocking(move || {
+        focus::focus_agent(&provider, known_pid, project_path.as_deref())
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -525,7 +545,9 @@ fn repository_snapshot(path: String) -> Result<RepositorySnapshot, String> {
     let (behind, ahead) = git(&["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
         .ok()
         .and_then(|counts| {
-            let mut parts = counts.split_whitespace().map(|part| part.parse::<u32>().ok());
+            let mut parts = counts
+                .split_whitespace()
+                .map(|part| part.parse::<u32>().ok());
             Some((parts.next()??, parts.next()??))
         })
         .map_or((None, None), |(behind, ahead)| (Some(behind), Some(ahead)));
@@ -641,42 +663,80 @@ fn parse_window_commits(log: &str, since: i64, until: i64) -> Vec<WindowCommit> 
 }
 
 /// `POST /v1/events`: events from a custom connector (see `ingest.rs` and docs/CONNECTORS.md).
-async fn receive_custom_events(State(state): State<CollectorState>, request: Request) -> impl IntoResponse {
+async fn receive_custom_events(
+    State(state): State<CollectorState>,
+    request: Request,
+) -> impl IntoResponse {
     let token = request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::to_owned);
-    let connector = token.and_then(|token| state.database.lock().ok().and_then(|database| ingest::connector_for_token(&database, &token)));
+    let connector = token.and_then(|token| {
+        state
+            .database
+            .lock()
+            .ok()
+            .and_then(|database| ingest::connector_for_token(&database, &token))
+    });
     let Some(connector) = connector else {
-        return (StatusCode::UNAUTHORIZED, axum::Json(json!({ "error": "Jeton inconnu : copie celui du connecteur dans l’onglet Connecteurs." })));
+        return (
+            StatusCode::UNAUTHORIZED,
+            axum::Json(
+                json!({ "error": "Jeton inconnu : copie celui du connecteur dans l’onglet Connecteurs." }),
+            ),
+        );
     };
     let Ok(body) = axum::body::to_bytes(request.into_body(), 1024 * 1024).await else {
-        return (StatusCode::PAYLOAD_TOO_LARGE, axum::Json(json!({ "error": "Requête trop grosse (1 Mo maximum)." })));
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            axum::Json(json!({ "error": "Requête trop grosse (1 Mo maximum)." })),
+        );
     };
-    let events = match ingest::parse(&body, &connector, state.capture_prompts.load(Ordering::Relaxed), state.capture_commands.load(Ordering::Relaxed)) {
+    let events = match ingest::parse(
+        &body,
+        &connector,
+        state.capture_prompts.load(Ordering::Relaxed),
+        state.capture_commands.load(Ordering::Relaxed),
+    ) {
         Ok(events) => events,
-        Err(error) => return (StatusCode::BAD_REQUEST, axum::Json(json!({ "error": error }))),
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(json!({ "error": error })),
+            );
+        }
     };
-    let accepted = events.into_iter().filter(|event| persist_event(&state, event.clone())).count();
+    let accepted = events
+        .into_iter()
+        .filter(|event| persist_event(&state, event.clone()))
+        .count();
     (StatusCode::OK, axum::Json(json!({ "accepted": accepted })))
 }
 
 #[tauri::command]
-fn list_custom_connectors(state: tauri::State<'_, CollectorState>) -> Result<Vec<ingest::CustomConnector>, String> {
+fn list_custom_connectors(
+    state: tauri::State<'_, CollectorState>,
+) -> Result<Vec<ingest::CustomConnector>, String> {
     let database = state.database.lock().map_err(|error| error.to_string())?;
     ingest::list(&database).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn create_custom_connector(state: tauri::State<'_, CollectorState>, name: String) -> Result<ingest::CustomConnector, String> {
+fn create_custom_connector(
+    state: tauri::State<'_, CollectorState>,
+    name: String,
+) -> Result<ingest::CustomConnector, String> {
     let database = state.database.lock().map_err(|error| error.to_string())?;
     ingest::create(&database, &name)
 }
 
 #[tauri::command]
-fn delete_custom_connector(state: tauri::State<'_, CollectorState>, id: String) -> Result<(), String> {
+fn delete_custom_connector(
+    state: tauri::State<'_, CollectorState>,
+    id: String,
+) -> Result<(), String> {
     let database = state.database.lock().map_err(|error| error.to_string())?;
     ingest::delete(&database, &id)
 }
@@ -711,10 +771,16 @@ async fn receive_claude_hook(
     // The hook request comes from the Claude Code process itself: its client port names it, which
     // lets "go to the agent" find the right terminal. Looked up once per session, while the
     // connection is still open.
-    let known = state.agent_pids.lock().map(|pids| pids.contains_key(&event.session_id)).unwrap_or(true);
+    let known = state
+        .agent_pids
+        .lock()
+        .map(|pids| pids.contains_key(&event.session_id))
+        .unwrap_or(true);
     if !known {
         let port = peer.port();
-        if let Ok(Some(pid)) = tauri::async_runtime::spawn_blocking(move || focus::pid_for_local_port(port)).await {
+        if let Ok(Some(pid)) =
+            tauri::async_runtime::spawn_blocking(move || focus::pid_for_local_port(port)).await
+        {
             if let Ok(mut pids) = state.agent_pids.lock() {
                 pids.insert(event.session_id.clone(), pid);
             }
@@ -884,7 +950,13 @@ fn normalize_claude_event(
         .map(|_| "failed".to_owned());
     if event_name == "Notification" {
         // Claude's own system message ("Claude needs your permission to use Bash"), never user text.
-        let message: String = input.get("message").and_then(Value::as_str).unwrap_or("").chars().take(160).collect();
+        let message: String = input
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .chars()
+            .take(160)
+            .collect();
         event.outcome = Some(format!("attention:{message}"));
     }
     if event_name == "PostToolUse" && event.tool_name.as_deref() == Some("Agent") {
@@ -955,7 +1027,15 @@ fn main() {
             // Old events go first, before anything reads the database.
             let _ = purge_expired_events(&connection, retention_days(&connection));
             let preference = |key: &str| -> bool {
-                connection.query_row("SELECT value FROM preferences WHERE key=?1", [key], |row| row.get::<_, i64>(0)).optional().ok().flatten().unwrap_or(0) != 0
+                connection
+                    .query_row("SELECT value FROM preferences WHERE key=?1", [key], |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .optional()
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0)
+                    != 0
             };
             let capture_prompts = preference("capture_prompts");
             let capture_commands = preference("capture_commands");
@@ -980,11 +1060,19 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 match tokio::net::TcpListener::bind(address).await {
                     Ok(listener) => {
-                        if let Ok(mut value) = status.lock() { *value = "listening".into(); }
-                        let _ = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await;
+                        if let Ok(mut value) = status.lock() {
+                            *value = "listening".into();
+                        }
+                        let _ = axum::serve(
+                            listener,
+                            router.into_make_service_with_connect_info::<SocketAddr>(),
+                        )
+                        .await;
                     }
                     Err(error) => {
-                        if let Ok(mut value) = status.lock() { *value = format!("error: {error}"); }
+                        if let Ok(mut value) = status.lock() {
+                            *value = format!("error: {error}");
+                        }
                         let _ = handle.emit("collector-error", error.to_string());
                     }
                 }
@@ -1029,16 +1117,42 @@ fn main() {
                 },
             );
             let purge_database = state.database.clone();
-            std::thread::spawn(move || loop {
-                std::thread::sleep(PURGE_INTERVAL);
-                if let Ok(database) = purge_database.lock() {
-                    let _ = purge_expired_events(&database, retention_days(&database));
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(PURGE_INTERVAL);
+                    if let Ok(database) = purge_database.lock() {
+                        let _ = purge_expired_events(&database, retention_days(&database));
+                    }
                 }
             });
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![claude_setup, codex_setup, gemini_setup, opencode_setup, qwen_setup, cursor_setup, load_session_events, load_analytics_events, export_session_history, repository_snapshot, focus_agent, reveal_folder, discover_workspace, resolve_repositories, commits_in_window, collector_status, update_capture_policy, retention_policy, update_retention_policy, list_custom_connectors, create_custom_connector, delete_custom_connector, clear_session_history])
+        .invoke_handler(tauri::generate_handler![
+            claude_setup,
+            codex_setup,
+            gemini_setup,
+            opencode_setup,
+            qwen_setup,
+            cursor_setup,
+            load_session_events,
+            load_analytics_events,
+            export_session_history,
+            repository_snapshot,
+            focus_agent,
+            reveal_folder,
+            discover_workspace,
+            resolve_repositories,
+            commits_in_window,
+            collector_status,
+            update_capture_policy,
+            retention_policy,
+            update_retention_policy,
+            list_custom_connectors,
+            create_custom_connector,
+            delete_custom_connector,
+            clear_session_history
+        ])
         .run(tauri::generate_context!())
         .expect("failed to run Agent Observer");
 }
@@ -1058,7 +1172,9 @@ mod tests {
         }
         assert_eq!(purge_expired_events(&connection, 0).unwrap(), 0);
         assert_eq!(purge_expired_events(&connection, 30).unwrap(), 1);
-        let left: String = connection.query_row("SELECT event_id FROM session_events", [], |row| row.get(0)).unwrap();
+        let left: String = connection
+            .query_row("SELECT event_id FROM session_events", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(left, "recent");
     }
 
@@ -1148,7 +1264,10 @@ mod tests {
         let input = json!({ "hook_event_name": "Notification", "session_id": "s", "message": "Claude needs your permission to use Bash", "cwd": "/w" });
         let event = normalize_claude_event(&input, false, false).unwrap();
         assert_eq!(event.kind, EventKind::Checkpoint);
-        assert_eq!(event.outcome.as_deref(), Some("attention:Claude needs your permission to use Bash"));
+        assert_eq!(
+            event.outcome.as_deref(),
+            Some("attention:Claude needs your permission to use Bash")
+        );
         assert_eq!(event.content, None);
     }
 

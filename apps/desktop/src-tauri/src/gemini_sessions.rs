@@ -682,7 +682,10 @@ mod tests {
         let input = usage.input_tokens.as_ref().unwrap();
         assert_eq!(input.value, 12000 - 9000 + 50);
         assert_eq!(input.origin, DataOrigin::Derived);
-        assert_eq!(usage.cache_read_tokens.as_ref().map(|value| value.value), Some(9000));
+        assert_eq!(
+            usage.cache_read_tokens.as_ref().map(|value| value.value),
+            Some(9000)
+        );
         let output = usage.output_tokens.as_ref().unwrap();
         assert_eq!(output.value, 300 + 700);
         assert_eq!(output.origin, DataOrigin::Derived);

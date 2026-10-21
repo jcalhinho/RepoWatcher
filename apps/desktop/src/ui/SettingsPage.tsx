@@ -3,7 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { SectionHeader } from "./Explain";
 import { currentLang, locale, setLang, t, type Lang } from "./i18n";
 import { noticeKinds, type NoticeKind } from "./notificationRules";
+import { useSubscription } from "./costPreferences";
 import { isBoolean, readPreference, usePreference } from "./preferences";
+import { activeProviders } from "./providers";
 
 type CapturePolicy = { capture_prompts: boolean; capture_commands: boolean };
 
@@ -57,6 +59,12 @@ export function SettingsPage({ onExport, onClear, onMini }: { onExport: () => Pr
     <NotificationSettings />
 
     <div className="settings-group">
+      <h3>{t("Coût", "Cost")}</h3>
+      <p>{t("Le montant affiché est toujours calculé au tarif de l’API. Si tu utilises un agent via un abonnement, indique-le : le montant devient « valeur consommée » au lieu d’un coût.", "The amount shown is always computed at API prices. If you use an agent through a subscription, say so: the amount becomes “value consumed” instead of a cost.")}</p>
+      {activeProviders.map((provider) => <SubscriptionToggle key={provider.eventKey} eventKey={provider.eventKey} name={provider.name} />)}
+    </div>
+
+    <div className="settings-group">
       <h3>{t("Combien de temps", "How long")}</h3>
       <label className="setting-row">
         <span><b>{t("Conservation des événements", "Event retention")}</b><small>{t("Les événements plus anciens sont supprimés automatiquement, au démarrage puis toutes les heures.", "Older events are deleted automatically, at startup and then every hour.")}</small></span>
@@ -101,6 +109,11 @@ function LanguageSetting() {
       <option value="en">English</option>
     </select>
   </label>;
+}
+
+function SubscriptionToggle({ eventKey, name }: { eventKey: string; name: string }) {
+  const [checked, setChecked] = useSubscription(eventKey);
+  return <Toggle checked={checked} disabled={false} onChange={setChecked} title={t(`${name} : je suis au forfait`, `${name}: I am on a subscription`)} hint={t("Le montant est affiché comme « valeur consommée ».", "The amount is shown as “value consumed”.")} />;
 }
 
 function Toggle({ checked, disabled, onChange, title, hint }: { checked: boolean; disabled: boolean; onChange: (value: boolean) => void; title: string; hint: string }) {

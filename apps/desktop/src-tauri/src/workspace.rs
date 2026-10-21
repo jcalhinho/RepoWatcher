@@ -81,10 +81,19 @@ pub fn discover(path: &Path) -> Result<Workspace, String> {
     } else {
         return Err("Choisis un dossier ou un fichier .code-workspace.".into());
     }
-    repositories.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.path.cmp(&b.path)));
+    repositories.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then(a.path.cmp(&b.path))
+    });
     repositories.dedup_by(|a, b| a.path == b.path);
     Ok(Workspace {
-        source: if is_code_workspace { "code-workspace" } else { "folder" },
+        source: if is_code_workspace {
+            "code-workspace"
+        } else {
+            "folder"
+        },
         path: path.display().to_string(),
         label,
         repositories,
@@ -126,9 +135,10 @@ fn find_repositories(directory: &Path, depth: usize, out: &mut Vec<WorkspaceRepo
         .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .map(|entry| entry.path())
         .filter(|child| {
-            child.file_name().and_then(|name| name.to_str()).is_some_and(|name| {
-                !name.starts_with('.') && !SKIPPED_DIRECTORIES.contains(&name)
-            })
+            child
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| !name.starts_with('.') && !SKIPPED_DIRECTORIES.contains(&name))
         })
         .collect();
     children.sort();
@@ -159,7 +169,10 @@ fn strip_jsonc(text: &str) -> String {
 }
 
 /// Calls `visit` for each character outside string literals; string contents are copied as is.
-fn copy_strings(text: &str, mut visit: impl FnMut(char, &mut std::iter::Peekable<std::str::Chars>, &mut String)) -> String {
+fn copy_strings(
+    text: &str,
+    mut visit: impl FnMut(char, &mut std::iter::Peekable<std::str::Chars>, &mut String),
+) -> String {
     let mut output = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(character) = chars.next() {
@@ -183,26 +196,28 @@ fn copy_strings(text: &str, mut visit: impl FnMut(char, &mut std::iter::Peekable
 }
 
 fn strip_comments(text: &str) -> String {
-    copy_strings(text, |character, chars, output| match (character, chars.peek()) {
-        ('/', Some('/')) => {
-            for next in chars.by_ref() {
-                if next == '\n' {
-                    output.push('\n');
-                    break;
+    copy_strings(text, |character, chars, output| {
+        match (character, chars.peek()) {
+            ('/', Some('/')) => {
+                for next in chars.by_ref() {
+                    if next == '\n' {
+                        output.push('\n');
+                        break;
+                    }
                 }
             }
-        }
-        ('/', Some('*')) => {
-            chars.next();
-            let mut previous = ' ';
-            for next in chars.by_ref() {
-                if previous == '*' && next == '/' {
-                    break;
+            ('/', Some('*')) => {
+                chars.next();
+                let mut previous = ' ';
+                for next in chars.by_ref() {
+                    if previous == '*' && next == '/' {
+                        break;
+                    }
+                    previous = next;
                 }
-                previous = next;
             }
+            _ => output.push(character),
         }
-        _ => output.push(character),
     })
 }
 
@@ -238,7 +253,12 @@ fn main_repository(path: &Path) -> Option<String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(path)
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"])
+        .args([
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+            "--show-toplevel",
+        ])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -250,7 +270,9 @@ fn main_repository(path: &Path) -> Option<String> {
     let top_level = lines.next()?.trim().to_owned();
     // A clone's common dir is `<root>/.git`; for a worktree it still points into the main clone.
     if common_dir.file_name().and_then(|name| name.to_str()) == Some(".git") {
-        common_dir.parent().map(|parent| parent.display().to_string())
+        common_dir
+            .parent()
+            .map(|parent| parent.display().to_string())
     } else {
         Some(top_level)
     }
@@ -276,24 +298,50 @@ mod tests {
     #[test]
     fn discovers_repositories_and_skips_dependencies() {
         let root = std::env::temp_dir().join(format!("agent-observer-ws-{}", uuid::Uuid::new_v4()));
-        for repo in ["alpha", "group/beta", "node_modules/ignored", "alpha/nested"] {
+        for repo in [
+            "alpha",
+            "group/beta",
+            "node_modules/ignored",
+            "alpha/nested",
+        ] {
             fs::create_dir_all(root.join(repo).join(".git")).unwrap();
         }
         fs::create_dir_all(root.join("gamma")).unwrap();
         fs::write(root.join("gamma/.git"), "gitdir: /elsewhere").unwrap();
-        fs::write(root.join("team.code-workspace"), r#"{ "folders": [ { "path": "group" }, { "path": "missing" }, ] }"#).unwrap();
+        fs::write(
+            root.join("team.code-workspace"),
+            r#"{ "folders": [ { "path": "group" }, { "path": "missing" }, ] }"#,
+        )
+        .unwrap();
 
         let folder = discover(&root).unwrap();
-        let names: Vec<_> = folder.repositories.iter().map(|repo| repo.name.as_str()).collect();
+        let names: Vec<_> = folder
+            .repositories
+            .iter()
+            .map(|repo| repo.name.as_str())
+            .collect();
         assert_eq!(folder.source, "folder");
         assert_eq!(names, vec!["alpha", "beta", "gamma"]);
-        assert_eq!(folder.repositories[0].project_hash, format!("{:x}", Sha256::digest(folder.repositories[0].path.as_bytes())));
+        assert_eq!(
+            folder.repositories[0].project_hash,
+            format!(
+                "{:x}",
+                Sha256::digest(folder.repositories[0].path.as_bytes())
+            )
+        );
 
         let listed = discover(&root.join("team.code-workspace")).unwrap();
         let _ = fs::remove_dir_all(&root);
         assert_eq!(listed.source, "code-workspace");
         assert_eq!(listed.label, "team");
-        assert_eq!(listed.repositories.iter().map(|repo| repo.name.as_str()).collect::<Vec<_>>(), vec!["beta"]);
+        assert_eq!(
+            listed
+                .repositories
+                .iter()
+                .map(|repo| repo.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["beta"]
+        );
         assert_eq!(listed.missing_folders.len(), 1);
     }
 }

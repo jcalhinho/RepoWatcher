@@ -2,6 +2,7 @@ import type { CSSProperties, KeyboardEvent, MouseEvent } from "react";
 import { ArrowUpRight } from "lucide-react";
 import type { AgentPulse, PulseStatus } from "./agentPulse";
 import { formatCompact, formatDuration } from "./analytics";
+import { costLabelText, useSubscription } from "./costPreferences";
 import { InfoTip } from "./Explain";
 import { locale, t } from "./i18n";
 import { ProviderMark } from "./ProviderBadges";
@@ -48,6 +49,7 @@ function Metric({ label, value, explanation, tone, compact }: { label: string; v
 export function AgentCard({ pulse, now, repository, compact = false, onGoTo }: { pulse: AgentPulse; now: number; repository: string | null; compact?: boolean; onGoTo?: (pulse: AgentPulse) => void }) {
   const provider = providerFor(pulse.key) ?? fallbackProvider;
   const status = statusInfo(pulse.status);
+  const [subscription] = useSubscription(pulse.key);
   const session = pulse.session;
   const failRate = session && session.toolCalls ? Math.round((session.failures / session.toolCalls) * 100) : 0;
   const tokens = session && (session.inputTokens !== null || session.outputTokens !== null) ? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) : null;
@@ -88,7 +90,7 @@ export function AgentCard({ pulse, now, repository, compact = false, onGoTo }: {
       <Metric compact={compact} label={t("Outils", "Tools")} value={failRate ? t(`${session.toolCalls} · ${failRate} % d’échecs`, `${session.toolCalls} · ${failRate}% failed`) : String(session.toolCalls)} tone={failRate >= 20 ? "bad" : undefined} explanation={t("Actions lancées par l’agent dans sa session (lire, modifier, exécuter…) et la part qui a échoué.", "Actions the agent ran in its session (read, edit, run…) and the share that failed.")} />
       <Metric compact={compact} label="Tokens" value={tokens === null ? t("non fournis", "not reported") : formatCompact(tokens)} explanation={tokens === null ? t("Ce connecteur ne transmet pas de compteur de tokens pour cette session.", "This connector reports no token counter for this session.") : t(`Volume de texte traité par le modèle dans la session : ${formatCompact(session.inputTokens ?? 0)} lus (contexte, cache compris) et ${formatCompact(session.outputTokens ?? 0)} écrits.`, `Text processed by the model in the session: ${formatCompact(session.inputTokens ?? 0)} read (context, cache included) and ${formatCompact(session.outputTokens ?? 0)} written.`)} />
       {session.cost !== null
-        ? <Metric compact={compact} label={t("Coût estimé", "Estimated cost")} value={session.cost.toLocaleString(locale(), { style: "currency", currency: "USD", maximumFractionDigits: 2 })} explanation={t("Estimation à partir des prix publics du modèle et des tokens fournis. Ce n’est pas une facture : forfaits et remises ne sont pas connus.", "Estimate from the model’s public prices and the reported tokens. Not an invoice: plans and discounts are unknown.")} />
+        ? <Metric compact={compact} label={costLabelText(pulse.key, subscription)} value={"≈ " + session.cost.toLocaleString(locale(), { style: "currency", currency: "USD", maximumFractionDigits: 2 })} explanation={subscription ? t("Ce que ces tokens coûteraient au tarif API. Tu es au forfait : ce n’est pas ce que tu paies.", "What these tokens would cost at API prices. You are on a subscription: this is not what you pay.") : t("Estimation à partir des prix publics du modèle et des tokens fournis. Ce n’est pas une facture : forfaits et remises ne sont pas connus.", "Estimate from the model’s public prices and the reported tokens. Not an invoice: plans and discounts are unknown.")} />
         : <Metric compact={compact} label={t("Fichiers modifiés", "Files edited")} value={String(session.filesChanged)} explanation={t("Fichiers différents que l’agent a modifiés pendant sa session (d’après les outils qu’il a utilisés).", "Distinct files the agent edited in its session (from the tools it used).")} />}
     </dl>}
 
