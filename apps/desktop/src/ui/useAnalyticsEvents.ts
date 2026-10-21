@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AnalyticsRange } from "./analytics";
+import { isActiveProvider } from "./providers";
 import type { SessionEvent } from "./types";
 
 const RANGE_MS: Record<Exclude<AnalyticsRange, "all">, number> = { "15m": 15 * 60_000, "1h": 60 * 60_000, "24h": 24 * 60 * 60_000 };
@@ -34,7 +35,7 @@ export function useAnalyticsEvents(range: AnalyticsRange, liveEvents: SessionEve
     let active = true;
     const since = range === "all" ? null : new Date(Date.now() - RANGE_MS[range]).toISOString();
     invoke<AnalyticsResponse>("load_analytics_events", { since })
-      .then((response) => { if (active) setStored(response); })
+      .then((response) => { if (active) setStored({ ...response, events: response.events.filter((event) => isActiveProvider(event.provider)) }); })
       .catch(() => { if (active) setStored(null); });
     return () => { active = false; };
   }, [range, tick]);

@@ -7,9 +7,8 @@ type ClaudeSetup = CapturePolicy & { endpoint: string; token: string; settings_f
 type CodexSetup = CapturePolicy & { sessions_dir: string; available: boolean };
 type GeminiSetup = CapturePolicy & { sessions_dir: string; available: boolean };
 type OpenCodeSetup = CapturePolicy & { data_dir: string; database_paths: string[]; available: boolean };
-type CursorSetup = CapturePolicy & { endpoint: string; settings_fragment: string };
 type QwenSetup = CapturePolicy & { projects_dir: string; available: boolean };
-type SetupByKind = { claude: ClaudeSetup; codex: CodexSetup; gemini: GeminiSetup; opencode: OpenCodeSetup; cursor: CursorSetup; qwen: QwenSetup };
+type SetupByKind = { claude: ClaudeSetup; codex: CodexSetup; gemini: GeminiSetup; opencode: OpenCodeSetup; qwen: QwenSetup };
 
 export type ConnectorSetup = { [K in ConnectorKind]: { kind: K; setup: SetupByKind[K] } }[ConnectorKind];
 
@@ -18,7 +17,6 @@ const SETUP_COMMANDS: Record<ConnectorKind, string> = {
   codex: "codex_setup",
   gemini: "gemini_setup",
   opencode: "opencode_setup",
-  cursor: "cursor_setup",
   qwen: "qwen_setup"
 };
 
@@ -64,17 +62,6 @@ export function ConnectorSetupDialog({ connector, onClose }: { connector: Connec
         <textarea readOnly value={setup.settings_fragment} aria-label="Configuration Claude Code" />
         <div className="setup-note">Toujours captés : identifiant de session, outil, chemin du dépôt/fichier et type d’événement. Entrée locale authentifiée : <code>{setup.endpoint}</code></div>
         <div className="setup-actions"><button className="outline-button" onClick={onClose}>Fermer</button><button className="primary-button" onClick={copy}>{copyState}</button></div>
-      </ConnectorDialog>;
-    }
-    case "cursor": {
-      const { setup } = connector;
-      return <ConnectorDialog id="cursor" eyebrow="CONNECTEUR LOCAL · HOOKS CURSOR" title="Brancher Cursor" onClose={onClose}>
-        <p>Fusionne ce fragment dans <code>~/.cursor/hooks.json</code> (Windows : <code>%USERPROFILE%\.cursor\hooks.json</code>). Ne remplace pas un fichier existant : ajoute les événements dans son bloc <code>hooks</code>. Aucun réglage Cursor n’est modifié automatiquement.</p>
-        <ol><li>Laisse Agent Observer ouvert pendant une session Cursor.</li><li>Ajoute le fragment aux réglages de hooks utilisateur.</li><li>Cursor recharge les hooks ; démarre une conversation pour vérifier le flux.</li></ol>
-        <div className="privacy-options">{commandsToggle("Enregistrer les commandes transmises aux outils", "Désactivé par défaut ; peut contenir des secrets.")}<small>Prompts, réponses, sorties, transcriptions, identités et pensées ne sont pas conservés. Cursor n’expose pas de compteurs de tokens dans ces hooks.</small>{error}</div>
-        <textarea readOnly value={setup.settings_fragment} aria-label="Configuration des hooks Cursor" />
-        <div className="setup-note">Les hooks d’observation n’interviennent pas dans les autorisations de Cursor. Entrée locale authentifiée : <code>{setup.endpoint}</code></div>
-        <div className="setup-actions"><button className="outline-button" onClick={onClose}>Fermer</button><button className="primary-button" onClick={async () => { await navigator.clipboard.writeText(setup.settings_fragment); onClose(); }}>Copier le fragment JSON</button></div>
       </ConnectorDialog>;
     }
     case "codex":

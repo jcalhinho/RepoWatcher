@@ -47,7 +47,7 @@ export function MiniView({ events, collectorState, pinned, onTogglePin, onExpand
       </div>
     </header>
     <div className="mini-cards">
-      {seen.length ? seen.map((pulse) => <AgentCard key={pulse.key} pulse={pulse} now={now} repository={pulse.project ? repositoryName(pulse.project) : null} />) : <div className="mini-empty">Aucun agent observé depuis le lancement. Démarre une session Claude Code, Codex, Gemini CLI, OpenCode, Cursor ou Qwen Code.</div>}
+      {seen.length ? seen.map((pulse) => <AgentCard key={pulse.key} pulse={pulse} now={now} repository={pulse.project ? repositoryName(pulse.project) : null} />) : <div className="mini-empty">Aucun agent observé depuis le lancement. Démarre une session Claude Code, Codex, Gemini CLI, OpenCode ou Qwen Code.</div>}
     </div>
     {unseen.length > 0 && <footer className="mini-footer">Pas encore vus : {unseen.map((pulse) => byKey.get(pulse.key)?.name ?? pulse.key).join(", ")}</footer>}
   </div>;

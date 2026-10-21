@@ -1,4 +1,4 @@
-export type ConnectorKind = "claude" | "codex" | "gemini" | "opencode" | "cursor" | "qwen";
+export type ConnectorKind = "claude" | "codex" | "gemini" | "opencode" | "qwen";
 
 export type Provider = {
   /** Stable UI identifier (React keys, 3D lane ids). */
@@ -21,7 +21,7 @@ export type Provider = {
 export const providers: Provider[] = [
   { id: "claude_code", eventKey: "claude_code", name: "Claude Code", initials: "C", color: "#d95926", surface: "#3a2219", connector: { kind: "claude" } },
   { id: "codex", eventKey: "codex", name: "Codex", initials: "⌘", color: "#199e70", surface: "#173229", connector: { kind: "codex", scope: "Journaux locaux" } },
-  { id: "cursor", eventKey: "cursor", name: "Cursor", initials: "◈", color: "#c98500", surface: "#352a14", connector: { kind: "cursor", scope: "Hooks officiels" } },
+  { id: "cursor", eventKey: "cursor", name: "Cursor", initials: "◈", color: "#c98500", surface: "#352a14" },
   { id: "opencode", eventKey: "opencode", name: "OpenCode", initials: "O", color: "#d55181", surface: "#3a1f2b", connector: { kind: "opencode", scope: "SQLite local" } },
   { id: "copilot", eventKey: "github_copilot", name: "GitHub Copilot", initials: "⌘", color: "#c1b5ff", surface: "#302a43" },
   { id: "gemini", eventKey: "gemini_cli", name: "Gemini CLI", initials: "✳", color: "#3987e5", surface: "#1c2c45", connector: { kind: "gemini", scope: "Journaux locaux" } },
@@ -38,11 +38,18 @@ export function providerById(id: string): Provider {
   return provider;
 }
 
-/** Lane order of the sprint track. */
-export const raceProviders: Provider[] = ["claude_code", "codex", "opencode", "gemini", "cursor", "qwen"].map(providerById);
-
 /**
- * Series order for charts. This exact order passed the categorical palette checks
- * (adjacent CVD ΔE ≥ 8.4, normal-vision ΔE ≥ 19.3 on #171b22): do not reorder casually.
+ * Agents shown by the app for now, in chart series order. This exact order passed the categorical
+ * palette checks (adjacent CVD ΔE ≥ 16, normal-vision ΔE ≥ 15 on #171b22): re-run the validator
+ * before reordering or adding one. Other providers stay in the table (backend keys) but are hidden.
  */
-export const chartProviders: Provider[] = ["gemini", "claude_code", "codex", "cursor", "opencode", "qwen"].map(providerById);
+export const activeProviders: Provider[] = ["claude_code", "gemini", "codex", "qwen", "opencode"].map(providerById);
+const ACTIVE_KEYS = new Set(activeProviders.map((provider) => provider.eventKey));
+
+export function isActiveProvider(eventKey: string) {
+  return ACTIVE_KEYS.has(eventKey);
+}
+
+/** Lanes of the sprint track and series of the charts. */
+export const raceProviders = activeProviders;
+export const chartProviders = activeProviders;

@@ -18,7 +18,7 @@ import { SessionAnalytics } from "./SessionAnalytics";
 import { ConnectorSetupDialog, loadConnectorSetup, type ConnectorSetup } from "./ConnectorDialog";
 import { EventFeed } from "./EventFeed";
 import { ProviderMark } from "./ProviderBadges";
-import { providerById, type ConnectorKind } from "./providers";
+import { activeProviders, isActiveProvider, providerById, type ConnectorKind } from "./providers";
 import { RepositoryMap } from "./RepositoryMap";
 import { Resizable } from "./Resizable";
 import { SessionExplorer } from "./SessionExplorer";
@@ -57,11 +57,12 @@ export function App() {
     invoke<SessionEvent[]>("load_session_events", { limit: 500, beforeOccurredAt: null, beforeEventId: null }).then((stored) => {
       setHistoryHasMore(stored.length === 500);
       setEvents((current) => {
-      const byId = new Map([...stored, ...current].map((item) => [item.event_id, item]));
+      const byId = new Map([...stored.filter((item) => isActiveProvider(item.provider)), ...current].map((item) => [item.event_id, item]));
       return [...byId.values()].sort(compareEventsNewestFirst).slice(0, 500);
       });
     }).catch(() => undefined);
     listen<SessionEvent>("session-event", (event) => {
+      if (!isActiveProvider(event.payload.provider)) return;
       setLiveEventIds((current) => ({ ...current, [event.payload.provider]: event.payload.event_id }));
       setEvents((current) => [event.payload, ...current.filter((item) => item.event_id !== event.payload.event_id)].sort(compareEventsNewestFirst));
     }).then((stop) => { unlisten = stop; });
@@ -172,7 +173,7 @@ export function App() {
         beforeEventId: oldest.event_id
       });
       setEvents((current) => {
-        const byId = new Map([...current, ...older].map((item) => [item.event_id, item]));
+        const byId = new Map([...current, ...older.filter((item) => isActiveProvider(item.provider))].map((item) => [item.event_id, item]));
         return [...byId.values()].sort(compareEventsNewestFirst);
       });
       setHistoryHasMore(older.length === 500);
@@ -226,7 +227,7 @@ export function App() {
             </div>
 
             <div className="panel connectors-panel">
-              <div className="panel-heading compact"><div><div className="panel-title-row"><h2>Connecteurs</h2><span className="count-badge">6 pris en charge</span></div><p>État d’observation par source locale</p></div><button className="tiny-icon" onClick={() => setWorkspaceDialog("connectors")} aria-label="Gérer les connecteurs"><Plus size={16} /></button></div>
+              <div className="panel-heading compact"><div><div className="panel-title-row"><h2>Connecteurs</h2><span className="count-badge">5 pris en charge</span></div><p>État d’observation par source locale</p></div><button className="tiny-icon" onClick={() => setWorkspaceDialog("connectors")} aria-label="Gérer les connecteurs"><Plus size={16} /></button></div>
               <div className="overview-connectors">{OVERVIEW_CONNECTORS.map((provider) => {
                 const count = stats.perProvider.get(provider.eventKey) || 0;
                 return <div className="overview-connector" key={provider.id}><ProviderMark provider={provider} small /><span className="connector-name">{provider.name}<small className="connector-scope">{count ? `${count} événements reçus` : "En attente d’événement"}</small></span><button className="connector-action" onClick={() => openConnectorSetup(provider.id)}>Configurer</button></div>;
@@ -246,7 +247,7 @@ export function App() {
           </section>
           {view === "sessions" && <WorkspaceModal titleId="history-title" title="Historique des sessions" className="history-dialog" onClose={() => setView("overview")}><SessionExplorer events={events} onConnect={connect} onClear={clearHistory} onLoadOlder={loadOlderHistory} hasMore={historyHasMore} loadingOlder={historyLoading} onExport={exportHistory} notice={historyNotice} repositoryFor={(sessionEvents) => { const repository = sessionEvents.map(workspace.repositoryOf).find(Boolean); return repository ? { root: repository.path, project_hash: repository.project_hash, name: repository.name } : null; }} /></WorkspaceModal>}
           {view === "repo-map" && <WorkspaceModal titleId="repo-title" title={mapRepository ? `Carte du dépôt · ${mapRepository.name}` : "Carte du dépôt"} onClose={() => setView("overview")}><p className="dialog-subtitle">{mapRepository?.path || "Choisis un workspace (un dossier ou un .code-workspace) pour comparer l’état Git de ses dépôts avec les événements des agents."}</p>{mapRepository && workspace.states[mapRepository.path]?.snapshot ? <RepositoryMap snapshot={workspace.states[mapRepository.path]!.snapshot!} events={filterByRepository(events, mapRepository.path, workspace.repositoryOf)} /> : <div className="panel secondary-empty">{mapRepository ? "Lecture de l’état Git…" : "La vue Git lit la branche, les modifications non commitées et les derniers commits de chaque dépôt."}</div>}{workspace.repositories.length > 1 && <div className="map-repository-picker">{workspace.repositories.map((repository) => <button key={repository.path} className={mapRepository?.path === repository.path ? "selected" : ""} onClick={() => setMapRepository(repository)}>{repository.name}</button>)}</div>}</WorkspaceModal>}
-          <footer className="page-footer"><span><span className={`footer-led ${collectorState === "listening" ? "active" : collectorState === "preview" ? "preview" : ""}`} /> {collectorState === "listening" ? "Collecteur local actif" : collectorState === "preview" ? "Aperçu web — collecte inactive" : "Collecteur en démarrage"}</span><span>Agent Observer <b>·</b> Connecteurs Claude Code + Codex + Gemini CLI + OpenCode + Cursor + Qwen Code</span><span>Événements chargés : {events.length}</span></footer>
+          <footer className="page-footer"><span><span className={`footer-led ${collectorState === "listening" ? "active" : collectorState === "preview" ? "preview" : ""}`} /> {collectorState === "listening" ? "Collecteur local actif" : collectorState === "preview" ? "Aperçu web — collecte inactive" : "Collecteur en démarrage"}</span><span>Agent Observer <b>·</b> Connecteurs Claude Code + Codex + Gemini CLI + OpenCode + Qwen Code</span><span>Événements chargés : {events.length}</span></footer>
         </div>
       </main>
       {workspaceDialog && <WorkspaceDialog kind={workspaceDialog} search={search} onSearch={setSearch} onConfigure={openConnectorSetup} onShow={setWorkspaceDialog} onOpenHistory={() => { setWorkspaceDialog(null); setView("sessions"); }} onClose={() => setWorkspaceDialog(null)} />}
@@ -256,7 +257,7 @@ export function App() {
 }
 
 /** Overview panel order: provider table order, connectors only. */
-const OVERVIEW_CONNECTORS = ["claude_code", "codex", "cursor", "opencode", "gemini", "qwen"].map(providerById);
+const OVERVIEW_CONNECTORS = activeProviders;
 
 
 function readFlag(key: string, fallback: boolean) {
