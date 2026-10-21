@@ -40,7 +40,7 @@ export function OverviewPage({ agentEvents, events, analyticsEvents, analytics, 
   const now = useNow(1000);
   const pulses = useMemo(() => sortPulses(activeProviders.map((provider) => agentPulse(provider.eventKey, agentEvents, now))), [agentEvents, now]);
   const seen = pulses.filter((pulse) => pulse.status !== "never");
-  const attention = pulses.filter((pulse) => pulse.status === "blocked" || pulse.status === "stalled" || pulse.status === "waiting");
+  const attention = pulses.filter((pulse) => pulse.status === "looping" || pulse.status === "blocked" || pulse.status === "stalled" || pulse.status === "waiting");
   const pulseByKey = new Map(pulses.map((pulse) => [pulse.key, pulse]));
 
   return <div className="page overview">

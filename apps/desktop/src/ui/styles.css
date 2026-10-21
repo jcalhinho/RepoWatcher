@@ -19,6 +19,7 @@
   --warn: #f2b84b;
   --bad: #f07167;
   --failure: #d03b3b;
+  --loop: #ff8f5a;
   --radius: 10px;
   --radius-sm: 7px;
   --space-1: 4px;
@@ -156,6 +157,8 @@ a { color: var(--accent); }
 .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: var(--space-3); }
 .agent-card { --status-color: var(--faint); min-width: 0; display: grid; align-content: start; gap: 10px; padding: 14px 15px; border: 1px solid var(--border); border-top: 3px solid var(--agent-color); border-radius: var(--radius); background: var(--surface); }
 .agent-card.status-blocked { --status-color: var(--bad); border-color: #f0716766; background: linear-gradient(180deg, #2a1719, var(--surface) 55%); }
+.agent-card.status-looping { --status-color: var(--loop); border-color: #ff8f5a77; background: linear-gradient(180deg, #2e1d14, var(--surface) 55%); }
+.agent-card.status-looping .agent-card-note { color: var(--loop); }
 .agent-card.status-stalled { --status-color: var(--warn); border-color: #f2b84b55; background: linear-gradient(180deg, #272012, var(--surface) 55%); }
 .agent-card.status-waiting { --status-color: var(--accent); border-color: #8fa0ff55; }
 .agent-card.status-working { --status-color: var(--good); }
@@ -410,6 +413,7 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 .status-list, .glossary { display: grid; gap: 10px; margin: 0; }
 .status-list div { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: start; gap: var(--space-3); }
 .status-list dd, .glossary dd { margin: 0; font-size: 13px; }
+.status-list .status-looping .status-badge { --status-color: var(--loop); }
 .status-list .status-blocked .status-badge { --status-color: var(--bad); }
 .status-list .status-stalled .status-badge { --status-color: var(--warn); }
 .status-list .status-waiting .status-badge { --status-color: var(--accent); }

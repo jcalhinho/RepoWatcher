@@ -16,7 +16,7 @@ const GLOSSARY: Array<[string, string]> = [
   ["Connecteur", "La façon dont l’app observe un agent : en lisant ses journaux ou en recevant ses notifications (hooks)."]
 ];
 
-const STATUS_ORDER: PulseStatus[] = ["blocked", "stalled", "waiting", "working", "idle", "never"];
+const STATUS_ORDER: PulseStatus[] = ["looping", "blocked", "stalled", "waiting", "working", "idle", "never"];
 
 /** Side panel explaining how the app works, what every state means, and the vocabulary used. */
 export function HelpPanel({ onClose }: { onClose: () => void }) {

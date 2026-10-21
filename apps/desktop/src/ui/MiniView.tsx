@@ -15,7 +15,7 @@ export function MiniView({ agentEvents, collectorState, pinned, onTogglePin, onE
   const pulses = useMemo(() => sortPulses(activeProviders.map((provider) => agentPulse(provider.eventKey, agentEvents, now))), [agentEvents, now]);
   const seen = pulses.filter((pulse) => pulse.status !== "never");
   const unseen = pulses.filter((pulse) => pulse.status === "never");
-  const attention = pulses.filter((pulse) => pulse.status === "blocked" || pulse.status === "stalled" || pulse.status === "waiting").length;
+  const attention = pulses.filter((pulse) => pulse.status === "looping" || pulse.status === "blocked" || pulse.status === "stalled" || pulse.status === "waiting").length;
   const working = pulses.filter((pulse) => pulse.status === "working").length;
 
   return <div className="mini-view">

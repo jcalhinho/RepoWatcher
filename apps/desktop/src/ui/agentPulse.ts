@@ -1,16 +1,17 @@
 import { narrateEvent, type Narration } from "./activity-copy";
 import { WRITE_TOOL } from "./analytics";
+import { detectLoop, type LoopFinding } from "./loopDetector";
 import { summarizeSession } from "./sessionSummary";
 import type { SessionEvent } from "./types";
 
 /**
- * At-a-glance state of one agent for the mini view, ordered by how much it needs the user:
- * blocked (repeated failures) → stalled (turn open but silent) → waiting (turn finished, waiting
+ * At-a-glance state of one agent, ordered by how much it needs the user:
+ * looping (repeats itself without progress) → blocked (repeated failures) → stalled (turn open but silent) → waiting (turn finished, waiting
  * for the next prompt) → working → idle → never seen.
  */
-export type PulseStatus = "blocked" | "stalled" | "waiting" | "working" | "idle" | "never";
+export type PulseStatus = "looping" | "blocked" | "stalled" | "waiting" | "working" | "idle" | "never";
 
-const PULSE_ORDER: PulseStatus[] = ["blocked", "stalled", "waiting", "working", "idle", "never"];
+const PULSE_ORDER: PulseStatus[] = ["looping", "blocked", "stalled", "waiting", "working", "idle", "never"];
 
 export type PulseAction = Narration & { id: string; at: number };
 
@@ -24,6 +25,8 @@ export type AgentPulse = {
   /** Start of the turn in progress, when one is open. */
   turnStartedAt: number | null;
   failureStreak: number;
+  /** Set when the open turn repeats itself without progress. */
+  loop: LoopFinding | null;
   session: {
     id: string;
     turns: number;
@@ -66,7 +69,7 @@ export function agentPulse(key: string, events: SessionEvent[], now: number): Ag
     const age = now - Date.parse(event.occurred_at);
     if (age >= 0 && age < SPARK_MINUTES * 60_000) spark[SPARK_MINUTES - 1 - Math.floor(age / 60_000)] += 1;
   }
-  if (!own.length) return { key, status: "never", lastEventAt: null, current: null, recent: [], turnStartedAt: null, failureStreak: 0, session: null, project: null, spark };
+  if (!own.length) return { key, status: "never", lastEventAt: null, current: null, recent: [], turnStartedAt: null, failureStreak: 0, loop: null, session: null, project: null, spark };
 
   const latest = own[0];
   const lastEventAt = Date.parse(latest.occurred_at);
@@ -95,15 +98,18 @@ export function agentPulse(key: string, events: SessionEvent[], now: number): Ag
   const age = now - lastEventAt;
   const turnOpen = !isTurnEnd(latest);
 
+  const sessionEvents = own.filter((event) => event.session_id === latest.session_id);
+  const loop = turnOpen && age < BLOCKED_WINDOW_MS ? detectLoop(sessionEvents) : null;
+
   let status: PulseStatus;
-  if (failureStreak >= 2 && age < BLOCKED_WINDOW_MS) status = "blocked";
+  if (loop) status = "looping";
+  else if (failureStreak >= 2 && age < BLOCKED_WINDOW_MS) status = "blocked";
   else if (turnOpen && age < WORKING_WINDOW_MS) status = "working";
   else if (turnOpen && turnStartedAt !== null && age < WAITING_WINDOW_MS && age >= STALLED_AFTER_MS) status = "stalled";
   else if (turnOpen && turnStartedAt !== null && age < STALLED_AFTER_MS) status = "working";
   else if (!turnOpen && age < WAITING_WINDOW_MS && latest.kind !== "session_ended") status = "waiting";
   else status = "idle";
 
-  const sessionEvents = own.filter((event) => event.session_id === latest.session_id);
   const summary = summarizeSession(sessionEvents);
   return {
     key,
@@ -113,6 +119,7 @@ export function agentPulse(key: string, events: SessionEvent[], now: number): Ag
     recent,
     turnStartedAt: turnOpen ? turnStartedAt : null,
     failureStreak,
+    loop,
     session: summary && {
       id: summary.sessionId,
       turns: summary.turns.count,

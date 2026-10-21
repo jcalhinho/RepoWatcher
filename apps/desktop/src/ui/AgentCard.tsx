@@ -7,6 +7,7 @@ import { providers } from "./providers";
 
 /** The one vocabulary for agent states, used by the cards, the race and the help panel. */
 export const STATUS_INFO: Record<PulseStatus, { label: string; explanation: string }> = {
+  looping: { label: "Tourne en rond", explanation: "L’agent répète les mêmes actions sans avancer (même commande, même fichier, même enchaînement). Interviens : il consomme des tokens pour rien." },
   blocked: { label: "Bloqué", explanation: "Au moins deux outils ont échoué d’affilée. L’agent tourne peut-être en rond : jette un œil à sa session." },
   stalled: { label: "Silencieux", explanation: "Un tour est en cours mais rien ne se passe depuis plus de 2 minutes. Il attend souvent une validation ou une réponse de ta part." },
   waiting: { label: "T’attend", explanation: "Son dernier tour est terminé : il est prêt pour ton prochain message." },
@@ -48,7 +49,7 @@ export function AgentCard({ pulse, now, repository, compact = false }: { pulse: 
   const tokens = session && (session.inputTokens !== null || session.outputTokens !== null) ? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) : null;
   const sparkMax = Math.max(1, ...pulse.spark);
   const place = repository ?? (pulse.project?.project_path ? `${pulse.project.project_path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1)} (hors workspace)` : null);
-  const statusNote = pulse.status === "blocked" ? `${pulse.failureStreak} échecs d’affilée` : status.explanation;
+  const statusNote = pulse.status === "looping" && pulse.loop ? `Boucle détectée : ${pulse.loop.evidence}.` : pulse.status === "blocked" ? `${pulse.failureStreak} échecs d’affilée` : status.explanation;
 
   return <article className={`agent-card status-${pulse.status} ${compact ? "compact" : ""}`} style={{ "--agent-color": provider.color } as CSSProperties} aria-label={`${provider.name} : ${status.label}`}>
     <header className="agent-card-header">

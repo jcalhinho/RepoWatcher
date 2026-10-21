@@ -48,6 +48,14 @@ describe("agent pulse for the mini view", () => {
     expect(pulse.status).toBe("working");
   });
 
+  it("reports a looping agent with its evidence, ahead of everything else", () => {
+    const repeated = Array.from({ length: 6 }, (_, index) => event("tool_finished", 60 - index * 5, { tool_name: "read_file", file_path: "/work/demo/same.rs" }));
+    const pulse = agentPulse("qwen_code", [event("user_message", 90), ...repeated], now);
+    expect(pulse.status).toBe("looping");
+    expect(pulse.loop?.evidence).toContain("répété 6 fois");
+    expect(sortPulses([agentPulse("codex", [event("tool_failed", 5, { provider: "codex" }), event("tool_failed", 4, { provider: "codex" })], now), pulse])[0].status).toBe("looping");
+  });
+
   it("orders agents by how much they need attention", () => {
     const never = agentPulse("cursor", [], now);
     const working = agentPulse("qwen_code", [event("user_message", 5)], now);
