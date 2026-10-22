@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -23,14 +23,16 @@ describe("ExactCommandPolicy", () => {
 });
 
 describe("createDefaultCommandPolicy", () => {
-  it("allows core verification commands and blocks others", () => {
+  it("allows bounded read commands and blocks scripts and other commands", () => {
     const policy = createDefaultCommandPolicy();
     const isWindows = process.platform === "win32";
 
     expect(policy.isAllowed(["ls", "-la"])).toBe(true);
-    expect(policy.isAllowed(["npm", "test"])).toBe(true);
-    expect(policy.isAllowed(["npm", "run", "lint"])).toBe(true);
-    expect(policy.isAllowed(["npm", "run", "build"])).toBe(true);
+    expect(policy.isAllowed(["npm", "test"])).toBe(false);
+    expect(policy.isAllowed(["npm", "run", "lint"])).toBe(false);
+    expect(policy.isAllowed(["npm", "run", "build"])).toBe(false);
+    expect(policy.isAllowed(["pnpm", "test"])).toBe(false);
+    expect(policy.isAllowed(["yarn", "build"])).toBe(false);
     expect(policy.isAllowed(["tail", "-n", "20", "README.md"])).toBe(true);
     expect(policy.isAllowed(["head", "-n", "30", "docs/intro.md"])).toBe(true);
     expect(policy.isAllowed(["cat", "package.json"])).toBe(true);
@@ -113,5 +115,19 @@ describe("createDefaultCommandPolicy", () => {
     );
     expect(quoted.exitCode).toBe(0);
     expect(quoted.stdout.toLowerCase()).toContain("eslint.config.js");
+  });
+
+  it("blocks Windows readers from following symlinks outside the repository", async () => {
+    if (process.platform !== "win32") return;
+    const root = await mkdtemp(path.join(os.tmpdir(), "repo-watcher-policy-root-"));
+    const outside = await mkdtemp(path.join(os.tmpdir(), "repo-watcher-policy-outside-"));
+    await writeFile(path.join(outside, "secret.txt"), "private", "utf8");
+    await symlink(outside, path.join(root, "external"), "junction");
+    const policy = createDefaultCommandPolicy();
+
+    await expect(runAllowedCommand(root, ["cmd", "/c", "type", "external/secret.txt"], policy))
+      .rejects.toThrow(/Path escapes repository root/);
+    await expect(runAllowedCommand(root, ["powershell", "-NoProfile", "-Command", "Get-Content", "-Path", "external/secret.txt"], policy))
+      .rejects.toThrow(/Path escapes repository root/);
   });
 });

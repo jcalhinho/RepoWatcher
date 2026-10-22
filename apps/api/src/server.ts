@@ -135,13 +135,18 @@ const fileReadSchema = z.object({
 
 const applyPatchSchema = z.object({
   path: z.string().min(1).max(500),
-  newContent: z.string().max(1_000_000),
+  newContent: z.string().max(4_000_000),
   expectedOldHash: z
     .string()
     .regex(/^[a-f0-9]{64}$/i)
     .optional(),
   apply: z.boolean().optional().default(false)
 });
+
+export function isLoopbackHost(host: string): boolean {
+  const normalized = host.toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost" || normalized === "::1" || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+}
 
 const repoGraphSchema = z.object({
   rootPath: z.string().min(1).max(500).optional().default("."),
@@ -543,6 +548,10 @@ export async function buildServer(options: BuildServerOptions = {}) {
       });
     }
 
+    const rawBody = request.body as { newContent?: unknown } | null;
+    if (typeof rawBody?.newContent === "string" && Buffer.byteLength(rawBody.newContent, "utf8") > 1_000_000) {
+      return reply.status(413).send({ error: "Patch content exceeds the 1000000 byte limit" });
+    }
     const body = applyPatchSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({
@@ -570,7 +579,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
       let oldContent = "";
       let fileExisted = true;
       try {
-        oldContent = await repository.readTextFile(body.data.path, 1_000_000);
+        oldContent = await repository.readTextFileExact(body.data.path, 1_000_000);
       } catch (error) {
         const isNotFound =
           typeof error === "object" &&
@@ -612,6 +621,9 @@ export async function buildServer(options: BuildServerOptions = {}) {
         preview
       };
     } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "ETOOBIG") {
+        return reply.status(413).send({ error: "Cannot apply patch", details: error instanceof Error ? error.message : "File too large" });
+      }
       return reply.status(400).send({
         error: "Cannot apply patch",
         details: error instanceof Error ? error.message : "Unknown error"
@@ -772,6 +784,9 @@ async function start() {
   const server = await buildServer({});
   const port = Number(process.env.PORT ?? 8787);
   const host = process.env.HOST ?? "127.0.0.1";
+  if (!isLoopbackHost(host)) {
+    throw new Error(`HOST must be a loopback address to protect local repository access: ${host}`);
+  }
   await server.listen({ port, host });
 
   const shutdown = async (signal: string) => {
