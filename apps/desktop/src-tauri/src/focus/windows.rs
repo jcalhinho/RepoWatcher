@@ -4,6 +4,7 @@
 
 use super::launch::Host;
 use super::{ProcInfo, tr};
+use crate::no_window::Quiet;
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, SW_RESTORE,
@@ -111,11 +112,13 @@ pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, S
             _ => "code",
         };
         Command::new("cmd")
+            .quiet()
             .args(["/C", program, folder])
             .spawn()
             .map_err(|error| error.to_string())?;
         // `clip` reads the command from its standard input.
         let mut clip = Command::new("clip")
+            .quiet()
             .stdin(std::process::Stdio::piped())
             .spawn()
             .map_err(|error| error.to_string())?;

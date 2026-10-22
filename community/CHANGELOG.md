@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-22
+
+### Fixed
+
+- Windows: console windows no longer flash open and closed in a loop. Background `git`,
+  `netstat` and `clip` calls now run without a console window.
+
 ## [0.1.0] - 2026-10-21
 
 <!-- Set the date to the day the v0.1.0 tag is pushed. -->

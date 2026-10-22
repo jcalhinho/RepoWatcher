@@ -5,6 +5,7 @@ mod codex_rollout;
 mod focus;
 mod gemini_sessions;
 mod ingest;
+mod no_window;
 mod opencode_sessions;
 mod qwen_sessions;
 mod workspace;
@@ -33,6 +34,8 @@ use std::{
 };
 use tauri::{Emitter, Manager};
 use uuid::Uuid;
+
+use crate::no_window::Quiet;
 
 #[derive(Clone)]
 struct CollectorState {
@@ -534,6 +537,7 @@ fn repository_snapshot(path: String) -> Result<RepositorySnapshot, String> {
     }
     let git = |args: &[&str]| -> Result<String, String> {
         let output = Command::new("git")
+            .quiet()
             .arg("-C")
             .arg(&root)
             .args(args)
@@ -621,6 +625,7 @@ fn commits_in_window(path: String, since: String, until: String) -> Result<Windo
         return Err("La fenêtre de session est inversée.".into());
     }
     let output = Command::new("git")
+        .quiet()
         .arg("-C")
         .arg(&root)
         .arg("log")

@@ -2,6 +2,7 @@
 //! hosts it to the front. Finding the process is pure logic over a process snapshot (tested);
 //! bringing a window forward is platform code (`macos.rs`, `windows.rs`).
 
+use crate::no_window::Quiet;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -336,6 +337,7 @@ pub fn pid_for_local_port(port: u16) -> Option<u32> {
     #[cfg(target_os = "windows")]
     {
         let output = std::process::Command::new("netstat")
+            .quiet()
             .args(["-ano", "-p", "TCP"])
             .output()
             .ok()?;
@@ -351,6 +353,7 @@ pub fn pid_for_local_port(port: u16) -> Option<u32> {
     #[cfg(not(target_os = "windows"))]
     {
         let output = std::process::Command::new("lsof")
+            .quiet()
             .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:ESTABLISHED", "-Fp"])
             .output()
             .ok()?;

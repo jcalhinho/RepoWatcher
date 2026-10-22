@@ -2,6 +2,7 @@
 //! VS Code `.code-workspace` file. Read-only: nothing is written to the
 //! repositories or to the workspace file.
 
+use crate::no_window::Quiet;
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -251,6 +252,7 @@ fn main_repository(path: &Path) -> Option<String> {
         return None;
     }
     let output = Command::new("git")
+        .quiet()
         .arg("-C")
         .arg(path)
         .args([
