@@ -137,6 +137,9 @@ a { color: var(--accent); }
 .workspace-menu b { color: var(--text); font-size: 13px; }
 .workspace-menu small { overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .repo-filter { display: flex; align-items: center; gap: 6px; margin-bottom: var(--space-5); padding-bottom: 2px; overflow-x: auto; scrollbar-width: thin; }
+.repo-filter { flex-wrap: wrap; }
+.repo-filter-note { flex-basis: 100%; margin: 4px 0 0; padding: 8px 12px; border: 1px solid var(--warn, #e0a040); border-radius: 8px; background: color-mix(in srgb, var(--warn, #e0a040) 12%, transparent); color: var(--text); font-size: 12.5px; }
+.link-button { padding: 0; border: 0; background: none; color: var(--accent, #7c8cff); font: inherit; text-decoration: underline; cursor: pointer; }
 .repo-filter-label { display: inline-flex; flex: none; align-items: center; margin-right: 4px; color: var(--muted); font-size: 12.5px; }
 .muted { color: var(--muted); }
 

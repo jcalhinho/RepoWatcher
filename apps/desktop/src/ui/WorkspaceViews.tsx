@@ -86,6 +86,7 @@ export function WorkspaceSwitcher({ model }: { model: WorkspaceModel }) {
 export function RepositoryFilterBar({ model, filter, onFilter, activity, outside, total }: { model: WorkspaceModel; filter: RepositoryFilter; onFilter: (filter: RepositoryFilter) => void; activity: Map<string, RepositoryActivity>; outside: number; total: number }) {
   if (!model.repositories.length) return null;
   const ordered = [...model.repositories].sort((a, b) => (activity.get(pathKey(b.path))?.lastAt ?? 0) - (activity.get(pathKey(a.path))?.lastAt ?? 0) || a.name.localeCompare(b.name));
+  const elsewhere = filter === "all" ? [] : ordered.filter((repository) => pathKey(repository.path) !== pathKey(filter) && activity.get(pathKey(repository.path))?.activeAgents.length).map((repository) => repository.name);
   const chip = (key: RepositoryFilter, label: string, count: number, repository?: WorkspaceRepository) => {
     const info = repository ? activity.get(pathKey(repository.path)) : undefined;
     const selected = filter === key || (repository && filter !== "all" && filter !== "outside" && pathKey(filter) === pathKey(repository.path));
@@ -98,6 +99,11 @@ export function RepositoryFilterBar({ model, filter, onFilter, activity, outside
     {chip("all", t("Tous les dépôts", "All repositories"), total)}
     {ordered.map((repository) => chip(repository.path, repository.name, activity.get(pathKey(repository.path))?.events ?? 0, repository))}
     {outside > 0 && chip("outside", t("Hors workspace", "Outside workspace"), outside)}
+    {filter !== "all" && <p className="repo-filter-note" role="status">
+      {t("Filtre actif : seule l’activité de ce dépôt est affichée.", "Filter on: only this repository’s activity is shown.")}
+      {elsewhere.length > 0 && <> {t("Des agents travaillent ailleurs :", "Agents are working elsewhere:")} <b>{elsewhere.join(", ")}</b>.</>}
+      {" "}<button className="link-button" onClick={() => onFilter("all")}>{t("Tout afficher", "Show everything")}</button>
+    </p>}
   </nav>;
 }
 
