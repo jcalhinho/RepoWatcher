@@ -103,7 +103,7 @@ pub fn bring_forward(
 
 /// Starts `command` in `folder`: in a new Windows Terminal (or console) window, or, for an
 /// editor, the folder is opened and the command copied for its integrated terminal.
-pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, String> {
+pub fn open_in_host(host: Host, folder: &str, command: Option<&str>) -> Result<String, String> {
     use std::process::Command;
     if host.is_editor() {
         let program = match host {
@@ -116,6 +116,12 @@ pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, S
             .args(["/C", program, folder])
             .spawn()
             .map_err(|error| error.to_string())?;
+        let Some(command) = command else {
+            return Ok(tr(
+                "Éditeur ouvert sur le projet : reprends ta session dans le panneau de l’agent.",
+                "Editor opened on the project: resume your session in the agent's panel.",
+            ));
+        };
         // `clip` reads the command from its standard input.
         let mut clip = Command::new("clip")
             .quiet()
@@ -134,6 +140,7 @@ pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, S
             ),
         ));
     }
+    let command = command.ok_or_else(|| tr("Commande inconnue.", "Unknown command."))?;
     // Windows Terminal when installed, a classic console otherwise.
     let with_wt = Command::new("wt.exe")
         .args(["-d", folder, "cmd", "/k", command])
@@ -156,5 +163,19 @@ pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, S
     Ok(tr(
         &format!("Agent relancé dans un nouveau terminal : {command}"),
         &format!("Agent started again in a new terminal: {command}"),
+    ))
+}
+
+/// Opens an application (its window comes to the front if it is already running).
+pub fn open_app(path: &std::path::Path) -> Result<String, String> {
+    std::process::Command::new("cmd")
+        .quiet()
+        .args(["/C", "start", ""])
+        .arg(path)
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    Ok(tr(
+        "Application ouverte : reprends ta session depuis l’application.",
+        "App opened: resume your session from the app.",
     ))
 }

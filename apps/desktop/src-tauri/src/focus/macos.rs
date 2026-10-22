@@ -46,9 +46,13 @@ pub fn bring_forward(chain: &[ProcInfo], project: Option<&str>) -> Result<String
     let agent = chain
         .first()
         .ok_or_else(|| tr("Processus introuvable.", "Process not found."))?;
-    let host = chain
-        .iter()
-        .find_map(|process| bundle_of(process).map(|bundle| (process, bundle)));
+    // The engine Claude Desktop starts for a session is itself an `.app`, in its data folder: the
+    // application to bring forward is the first one outside it.
+    let host = chain.iter().find_map(|process| {
+        bundle_of(process)
+            .filter(|bundle| !bundle.contains("/Application Support/"))
+            .map(|bundle| (process, bundle))
+    });
     let Some((_, bundle)) = host else {
         return Err(tr(
             "Impossible de trouver l’application qui héberge cet agent.",
@@ -152,10 +156,12 @@ fn copy_to_clipboard(text: &str) -> Result<(), String> {
 
 /// Starts `command` in `folder`: typed into a new Terminal / iTerm2 window, or, for an editor,
 /// the folder is opened and the command copied for its integrated terminal.
-pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, String> {
-    let line = format!("cd {} && {command}", shell_single_quote(folder));
+pub fn open_in_host(host: Host, folder: &str, command: Option<&str>) -> Result<String, String> {
+    let command_line = command.ok_or_else(|| tr("Commande inconnue.", "Unknown command."));
     match host {
         Host::Terminal => {
+            let command = command_line?;
+            let line = format!("cd {} && {command}", shell_single_quote(folder));
             osascript(&format!(
                 "tell application \"Terminal\"\n activate\n do script {}\nend tell",
                 applescript_string(&line)
@@ -166,6 +172,8 @@ pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, S
             ))
         }
         Host::Iterm => {
+            let command = command_line?;
+            let line = format!("cd {} && {command}", shell_single_quote(folder));
             osascript(&format!(
                 "tell application \"iTerm2\"\n activate\n set w to (create window with default profile)\n tell current session of w to write text {}\nend tell",
                 applescript_string(&line)
@@ -175,6 +183,10 @@ pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, S
                 &format!("Agent started again in a new iTerm window: {command}"),
             ))
         }
+        Host::Desktop => Err(tr(
+            "Une application de bureau se relance avec son propre bouton.",
+            "A desktop app is started with its own icon.",
+        )),
         editor => {
             let app = match editor {
                 Host::Cursor => "Cursor",
@@ -185,6 +197,16 @@ pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, S
                 .args(["-a", app, folder])
                 .status()
                 .map_err(|error| error.to_string())?;
+            let Some(command) = command else {
+                return Ok(tr(
+                    &format!(
+                        "{app} ouvert sur le projet : reprends ta session dans le panneau de l’agent."
+                    ),
+                    &format!(
+                        "{app} opened on the project: resume your session in the agent's panel."
+                    ),
+                ));
+            };
             copy_to_clipboard(command)?;
             Ok(tr(
                 &format!(
@@ -196,4 +218,21 @@ pub fn open_in_host(host: Host, folder: &str, command: &str) -> Result<String, S
             ))
         }
     }
+}
+
+/// Opens an application (its window comes to the front if it is already running).
+pub fn open_app(path: &std::path::Path) -> Result<String, String> {
+    Command::new("open")
+        .arg("-a")
+        .arg(path)
+        .status()
+        .map_err(|error| error.to_string())?;
+    let name = path
+        .file_stem()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(tr(
+        &format!("{name} ouvert : reprends ta session depuis l’application."),
+        &format!("{name} opened: resume your session from the app."),
+    ))
 }

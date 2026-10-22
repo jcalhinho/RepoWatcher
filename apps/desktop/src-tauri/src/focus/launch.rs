@@ -36,6 +36,8 @@ pub fn shell_single_quote(value: &str) -> String {
 /// Terminals and editors an agent can be started in, as the UI names them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Host {
+    /// The agent's own desktop application (Claude, Codex…).
+    Desktop,
     Terminal,
     Iterm,
     Code,
@@ -46,6 +48,7 @@ pub enum Host {
 impl Host {
     pub fn parse(value: &str) -> Option<Host> {
         Some(match value {
+            "desktop" => Host::Desktop,
             "terminal" => Host::Terminal,
             "iterm" => Host::Iterm,
             "code" => Host::Code,
@@ -62,6 +65,15 @@ impl Host {
     }
 }
 
+/// Desktop applications that run an agent in their own window.
+const DESKTOP_APPS: &[&str] = &[
+    "/claude.app/",
+    "/codex.app/",
+    "/chatgpt.app/",
+    "/opencode.app/",
+    "/anthropicclaude/",
+];
+
 /// The terminal or editor an agent process lives in, read from its ancestors.
 pub fn host_of(chain: &[ProcInfo]) -> Option<Host> {
     chain.iter().find_map(|process| {
@@ -70,8 +82,11 @@ pub fn host_of(chain: &[ProcInfo]) -> Option<Host> {
             process.exe.as_deref().unwrap_or_default(),
             process.name
         )
-        .to_lowercase();
-        if text.contains("iterm") {
+        .to_lowercase()
+        .replace('\\', "/");
+        if DESKTOP_APPS.iter().any(|app| text.contains(app)) {
+            Some(Host::Desktop)
+        } else if text.contains("iterm") {
             Some(Host::Iterm)
         } else if text.contains("terminal.app") || text.contains("windowsterminal") {
             Some(Host::Terminal)
@@ -85,6 +100,59 @@ pub fn host_of(chain: &[ProcInfo]) -> Option<Host> {
             None
         }
     })
+}
+
+/// What can start an agent on this computer.
+#[derive(Debug, Default, Clone)]
+pub struct Availability {
+    /// The agent's command line program is installed.
+    pub cli: bool,
+    /// The agent's own desktop application is installed.
+    pub desktop: bool,
+    /// An editor that has the agent's extension.
+    pub editor: Option<Host>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Plan {
+    /// Run the resume command in this terminal (in an editor: open it and copy the command).
+    Run(Host),
+    /// Open the agent's desktop application.
+    Desktop,
+    /// Open the project in an editor that has the agent's extension.
+    Editor(Host),
+    Nothing,
+}
+
+/// How to start an agent again: where it was last seen first, then what exists on this computer.
+/// A command line is only used when the program is installed.
+pub fn plan(remembered: Option<Host>, preferred: Option<Host>, available: &Availability) -> Plan {
+    match remembered {
+        Some(Host::Desktop) if available.desktop => return Plan::Desktop,
+        Some(host @ (Host::Terminal | Host::Iterm)) if available.cli => return Plan::Run(host),
+        Some(host) if host.is_editor() => {
+            return if available.cli {
+                Plan::Run(host)
+            } else {
+                Plan::Editor(host)
+            };
+        }
+        _ => {}
+    }
+    if available.cli {
+        return Plan::Run(
+            preferred
+                .filter(|host| *host != Host::Desktop)
+                .unwrap_or(Host::Terminal),
+        );
+    }
+    if available.desktop {
+        return Plan::Desktop;
+    }
+    match available.editor {
+        Some(host) => Plan::Editor(host),
+        None => Plan::Nothing,
+    }
 }
 
 #[cfg(test)]
@@ -151,5 +219,56 @@ mod tests {
         )];
         assert_eq!(host_of(&chain), Some(Host::Code));
         assert_eq!(host_of(&[process("/bin/zsh")]), None);
+    }
+
+    #[test]
+    fn never_uses_a_command_line_that_is_not_installed() {
+        let desktop_only = Availability {
+            cli: false,
+            desktop: true,
+            editor: Some(Host::Code),
+        };
+        // Seen in a terminal, but there is no `claude` command: use the desktop app.
+        assert_eq!(
+            plan(Some(Host::Terminal), Some(Host::Terminal), &desktop_only),
+            Plan::Desktop
+        );
+        assert_eq!(plan(None, None, &desktop_only), Plan::Desktop);
+        let editor_only = Availability {
+            cli: false,
+            desktop: false,
+            editor: Some(Host::Code),
+        };
+        assert_eq!(plan(None, None, &editor_only), Plan::Editor(Host::Code));
+        assert_eq!(
+            plan(Some(Host::Cursor), None, &editor_only),
+            Plan::Editor(Host::Cursor)
+        );
+        assert_eq!(plan(None, None, &Availability::default()), Plan::Nothing);
+    }
+
+    #[test]
+    fn goes_back_to_where_the_session_was() {
+        let all = Availability {
+            cli: true,
+            desktop: true,
+            editor: Some(Host::Code),
+        };
+        assert_eq!(plan(Some(Host::Desktop), None, &all), Plan::Desktop);
+        assert_eq!(plan(Some(Host::Iterm), None, &all), Plan::Run(Host::Iterm));
+        assert_eq!(plan(Some(Host::Code), None, &all), Plan::Run(Host::Code));
+        assert_eq!(plan(None, Some(Host::Iterm), &all), Plan::Run(Host::Iterm));
+        assert_eq!(plan(None, None, &all), Plan::Run(Host::Terminal));
+    }
+
+    #[test]
+    fn recognises_a_desktop_app_as_host() {
+        let chain = [
+            process(
+                "/Users/me/Library/Application Support/Claude/claude-code/2.1/x/claude.app/Contents/MacOS/claude",
+            ),
+            process("/Applications/Claude.app/Contents/Helpers/disclaimer"),
+        ];
+        assert_eq!(host_of(&chain), Some(Host::Desktop));
     }
 }

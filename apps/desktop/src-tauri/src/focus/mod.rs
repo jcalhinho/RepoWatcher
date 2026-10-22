@@ -43,6 +43,14 @@ fn remember_host(session_id: &str, host: launch::Host) {
     }
 }
 
+/// Records where the agent process `pid` runs, for a session.
+pub fn note_host(session_id: &str, pid: u32) {
+    let processes = snapshot();
+    if let Some(host) = launch::host_of(&ancestors(&processes, pid)) {
+        remember_host(session_id, host);
+    }
+}
+
 fn remembered_host(session_id: &str) -> Option<launch::Host> {
     LAST_HOST.lock().ok()?.as_ref()?.get(session_id).copied()
 }
@@ -84,26 +92,75 @@ fn normalize(path: &str) -> String {
     path.replace('\\', "/").trim_end_matches('/').to_lowercase()
 }
 
+/// Programs that run an agent written for them: the script they are given names the agent.
+const INTERPRETERS: &[&str] = &[
+    "node", "nodejs", "bun", "deno", "python", "python3", "npx", "tsx",
+];
+
+/// Path of the program a process runs: its executable, or the first word of its command line.
+fn program_path(process: &ProcInfo) -> String {
+    let path = process
+        .exe
+        .as_deref()
+        .unwrap_or_else(|| process.cmd.split_whitespace().next().unwrap_or_default());
+    path.replace('\\', "/")
+}
+
+fn file_stem(path: &str) -> String {
+    let name = path.rsplit('/').next().unwrap_or(path).to_lowercase();
+    name.strip_suffix(".exe").unwrap_or(&name).to_owned()
+}
+
+/// A part of a path or a program name that names the agent: `codex`, `codex-aarch64`, `qwen-code`,
+/// `gemini-cli`, `@openai/codex`, `codex.js`.
+fn names_agent(part: &str, marker: &str) -> bool {
+    let part = part.trim_start_matches('@');
+    part == marker
+        || part.starts_with(&format!("{marker}-"))
+        || part.starts_with(&format!("{marker}."))
+}
+
+/// The application shell of a desktop app (Claude, Codex…) or this observer: a host, not a session.
+fn is_host_or_self(process: &ProcInfo) -> bool {
+    let program = program_path(process).to_lowercase();
+    let name = process.name.to_lowercase();
+    // `X.app/Contents/MacOS/X` is the window process of a macOS app. The engine that Claude
+    // Desktop starts for each session also lives in an `.app`, in its own data folder.
+    let app_shell =
+        program.contains(".app/contents/macos/") && !program.contains("/application support/");
+    app_shell
+        || program.contains("repowatcher")
+        || program.contains("agent observer")
+        || name.contains("agent observer")
+        || program.contains("crashpad")
+        // Windows: the Claude desktop app is installed under AnthropicClaude.
+        || program.contains("anthropicclaude")
+}
+
 fn is_agent_process(process: &ProcInfo, provider: &str) -> bool {
-    let haystack = format!("{} {}", process.name, process.cmd).to_lowercase();
-    // The observer itself, editors and helper processes mention agent names in their paths too.
-    // GUI applications (macOS bundles, the Claude desktop app) are hosts, not agent sessions.
-    if haystack.contains("agent observer")
-        || haystack.contains("repowatcher")
-        || haystack.contains("crashpad")
-        || haystack.contains(".app/contents/")
-        || haystack.contains("anthropicclaude")
-    {
+    if is_host_or_self(process) {
         return false;
     }
+    let program = program_path(process);
+    let stem = file_stem(&program);
     agent_markers(provider).iter().any(|marker| {
-        process.name.to_lowercase().starts_with(marker)
-            || haystack.split([' ', '/', '\\']).any(|part| {
-                part == *marker
-                    || part.starts_with(&format!("{marker}."))
-                    || part == format!("@{marker}")
-                    || part.ends_with(&format!("{marker}-cli"))
-            })
+        if names_agent(&stem, marker) {
+            return true;
+        }
+        // `node /usr/local/bin/qwen`, `node …/@google/gemini-cli/dist/index.js`
+        INTERPRETERS.contains(&stem.as_str())
+            && process
+                .cmd
+                .split_whitespace()
+                .skip(1)
+                .find(|word| !word.starts_with('-'))
+                .is_some_and(|script| {
+                    script
+                        .replace('\\', "/")
+                        .to_lowercase()
+                        .split('/')
+                        .any(|part| names_agent(part, marker))
+                })
     })
 }
 
@@ -252,61 +309,214 @@ fn bring_forward(
     ))
 }
 
-/// The agent is not running: start its session again in the terminal or editor it was in, or in
-/// the one the user prefers.
+/// The command line program of each agent.
+fn binary_name(provider: &str) -> Option<&'static str> {
+    Some(match provider {
+        "claude_code" => "claude",
+        "codex" => "codex",
+        "gemini_cli" => "gemini",
+        "qwen_code" => "qwen",
+        "opencode" => "opencode",
+        _ => return None,
+    })
+}
+
+/// Whether the agent's program is installed, as a terminal would find it (a desktop app has a
+/// shorter PATH than the user's shell, so the shell is asked).
+fn cli_installed(provider: &str) -> bool {
+    let Some(binary) = binary_name(provider) else {
+        return false;
+    };
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("where")
+            .arg(binary)
+            .quiet()
+            .output()
+            .is_ok_and(|output| output.status.success())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        std::process::Command::new(shell)
+            .args(["-ilc", &format!("command -v {binary}")])
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .is_ok_and(|output| output.status.success())
+    }
+}
+
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(Into::into)
+}
+
+/// Path of the agent's own desktop application, when installed.
+fn desktop_app(provider: &str) -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let name = match provider {
+            "claude_code" => "Claude",
+            "codex" => "Codex",
+            "opencode" => "OpenCode",
+            _ => return None,
+        };
+        let mut folders = vec![std::path::PathBuf::from("/Applications")];
+        folders.extend(home_dir().map(|home| home.join("Applications")));
+        folders
+            .into_iter()
+            .map(|folder| folder.join(format!("{name}.app")))
+            .find(|path| path.is_dir())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let local = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA")?);
+        let candidates: &[&str] = match provider {
+            "claude_code" => &[
+                "AnthropicClaude\\claude.exe",
+                "Programs\\Claude\\Claude.exe",
+            ],
+            "codex" => &["Programs\\Codex\\Codex.exe"],
+            _ => &[],
+        };
+        candidates
+            .iter()
+            .map(|path| local.join(path))
+            .find(|path| path.is_file())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = provider;
+        None
+    }
+}
+
+/// An editor that has the agent's extension installed.
+fn editor_with_extension(provider: &str) -> Option<launch::Host> {
+    let prefixes: &[&str] = match provider {
+        "claude_code" => &["anthropic.claude-code-"],
+        "codex" => &["openai.chatgpt-", "openai.codex-"],
+        "opencode" => &["sst-dev.opencode-"],
+        "qwen_code" => &["qwenlm.qwen-code"],
+        "gemini_cli" => &["google.gemini-cli"],
+        _ => return None,
+    };
+    let home = home_dir()?;
+    [
+        (".vscode", launch::Host::Code),
+        (".cursor", launch::Host::Cursor),
+        (".windsurf", launch::Host::Windsurf),
+    ]
+    .into_iter()
+    .find(|(folder, _)| {
+        std::fs::read_dir(home.join(folder).join("extensions")).is_ok_and(|entries| {
+            entries.flatten().any(|entry| {
+                let name = entry.file_name().to_string_lossy().to_lowercase();
+                prefixes.iter().any(|prefix| name.starts_with(prefix))
+            })
+        })
+    })
+    .map(|(_, host)| host)
+}
+
+/// The agent is not running: bring its session back where it was (its desktop app, a terminal or
+/// an editor), or where the user prefers, using only what is installed.
 fn relaunch(
     provider: &str,
     session_id: Option<&str>,
     preferred_host: Option<&str>,
     fallback_folder: Option<String>,
 ) -> FocusOutcome {
-    let not_found = |fallback_folder| FocusOutcome {
+    let failure = |message: String, fallback_folder| FocusOutcome {
         ok: false,
-        message: tr(
-            "Agent introuvable et impossible de le relancer (dossier ou commande inconnus).",
-            "Agent not found and it can't be started again (unknown folder or command).",
-        ),
+        message,
         fallback_folder,
     };
-    let (Some(folder), Some(command)) = (
-        fallback_folder.as_deref(),
-        launch::resume_command(provider, session_id),
-    ) else {
-        return not_found(fallback_folder);
+    let Some(folder) = fallback_folder.clone() else {
+        return failure(
+            tr(
+                "Agent introuvable et son dossier est inconnu ou n’existe plus.",
+                "Agent not found, and its folder is unknown or no longer exists.",
+            ),
+            None,
+        );
     };
-    let host = session_id
-        .and_then(remembered_host)
-        .or_else(|| preferred_host.and_then(launch::Host::parse))
-        .unwrap_or(launch::Host::Terminal);
-    match open_in_host(host, folder, &command) {
+    let available = launch::Availability {
+        cli: cli_installed(provider),
+        desktop: desktop_app(provider).is_some(),
+        editor: editor_with_extension(provider),
+    };
+    let plan = launch::plan(
+        session_id.and_then(remembered_host),
+        preferred_host.and_then(launch::Host::parse),
+        &available,
+    );
+    let result = match plan {
+        launch::Plan::Run(host) => match launch::resume_command(provider, session_id) {
+            Some(command) => open_in_host(host, &folder, Some(&command)),
+            None => Err(tr(
+                "Cet agent ne peut pas être relancé depuis ici.",
+                "This agent can't be started again from here.",
+            )),
+        },
+        launch::Plan::Editor(host) => open_in_host(host, &folder, None),
+        launch::Plan::Desktop => desktop_app(provider)
+            .ok_or_else(|| String::from("desktop app"))
+            .and_then(|path| open_app(&path)),
+        launch::Plan::Nothing => Err(tr(
+            "Agent arrêté, et rien pour le relancer : ni commande en ligne, ni application, ni extension d’éditeur. Ouvre le dossier et relance-le toi-même.",
+            "Agent stopped, and nothing to start it with: no command line, desktop app or editor extension. Open the folder and start it yourself.",
+        )),
+    };
+    match result {
         Ok(message) => FocusOutcome {
             ok: true,
             message,
             fallback_folder: None,
         },
-        Err(message) => FocusOutcome {
-            ok: false,
-            message,
-            fallback_folder,
-        },
+        Err(message) => failure(message, fallback_folder),
     }
 }
 
 #[cfg(target_os = "macos")]
-fn open_in_host(host: launch::Host, folder: &str, command: &str) -> Result<String, String> {
+fn open_in_host(host: launch::Host, folder: &str, command: Option<&str>) -> Result<String, String> {
     macos::open_in_host(host, folder, command)
 }
 
 #[cfg(target_os = "windows")]
-fn open_in_host(host: launch::Host, folder: &str, command: &str) -> Result<String, String> {
+fn open_in_host(host: launch::Host, folder: &str, command: Option<&str>) -> Result<String, String> {
     windows::open_in_host(host, folder, command)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn open_in_host(_host: launch::Host, _folder: &str, _command: &str) -> Result<String, String> {
+fn open_in_host(
+    _host: launch::Host,
+    _folder: &str,
+    _command: Option<&str>,
+) -> Result<String, String> {
     Err(tr(
         "Relancer un agent n’est pas pris en charge sur ce système.",
         "Starting an agent again is not supported on this system.",
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn open_app(path: &Path) -> Result<String, String> {
+    macos::open_app(path)
+}
+
+#[cfg(target_os = "windows")]
+fn open_app(path: &Path) -> Result<String, String> {
+    windows::open_app(path)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn open_app(_path: &Path) -> Result<String, String> {
+    Err(tr(
+        "Ouvrir une application n’est pas pris en charge sur ce système.",
+        "Opening an application is not supported on this system.",
     ))
 }
 
@@ -475,6 +685,115 @@ mod tests {
             find_agent_process(&processes, "claude_code", Some("/Users/me/api")),
             None
         );
+    }
+
+    fn exe_process(pid: u32, parent: Option<u32>, exe: &str, cmd: &str, cwd: &str) -> ProcInfo {
+        ProcInfo {
+            pid,
+            parent,
+            name: exe.rsplit('/').next().unwrap().to_owned(),
+            cmd: cmd.into(),
+            exe: Some(exe.into()),
+            cwd: Some(cwd.into()),
+            start_time: pid as u64,
+        }
+    }
+
+    #[test]
+    fn finds_claude_in_the_desktop_app_and_in_vs_code() {
+        let engine = "/Users/me/Library/Application Support/Claude/claude-code/2.1.308/abc/claude.app/Contents/MacOS/claude";
+        let extension = "/Users/me/.vscode/extensions/anthropic.claude-code-2.1.306-darwin-arm64/resources/native-binary/claude";
+        let processes = vec![
+            exe_process(1, None, "/sbin/launchd", "/sbin/launchd", "/"),
+            exe_process(
+                2,
+                Some(1),
+                "/Applications/Claude.app/Contents/MacOS/Claude",
+                "/Applications/Claude.app/Contents/MacOS/Claude",
+                "/",
+            ),
+            exe_process(
+                3,
+                Some(2),
+                "/Applications/Claude.app/Contents/Frameworks/Claude Helper.app/Contents/MacOS/Claude Helper",
+                "Claude Helper --user-data-dir=/Users/me/Library/Application Support/Claude",
+                "/",
+            ),
+            exe_process(
+                4,
+                Some(2),
+                "/Applications/Claude.app/Contents/Helpers/disclaimer",
+                &format!("disclaimer --pgroup -- {engine} --output-format stream-json"),
+                "/Users/me/app",
+            ),
+            exe_process(
+                5,
+                Some(4),
+                engine,
+                &format!("{engine} --output-format stream-json"),
+                "/Users/me/app",
+            ),
+            exe_process(
+                6,
+                Some(1),
+                "/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)",
+                "Code Helper (Plugin)",
+                "/",
+            ),
+            exe_process(7, Some(6), extension, extension, "/Users/me/web"),
+        ];
+        // Desktop engine: neither the app window, its helpers nor the wrapper count as sessions.
+        assert_eq!(
+            find_agent_process(&processes, "claude_code", Some("/Users/me/app")),
+            Some(5)
+        );
+        assert_eq!(
+            find_agent_process(&processes, "claude_code", Some("/Users/me/web")),
+            Some(7)
+        );
+        let chain: Vec<u32> = ancestors(&processes, 5).iter().map(|p| p.pid).collect();
+        assert_eq!(chain, vec![5, 4, 2, 1]);
+        assert_eq!(
+            launch::host_of(&ancestors(&processes, 5)),
+            Some(launch::Host::Desktop)
+        );
+        assert_eq!(
+            launch::host_of(&ancestors(&processes, 7)),
+            Some(launch::Host::Code)
+        );
+    }
+
+    /// Reads this computer's real processes: `cargo test -- --ignored --nocapture real_processes`.
+    #[test]
+    #[ignore]
+    fn real_processes() {
+        let processes = snapshot();
+        for provider in [
+            "claude_code",
+            "codex",
+            "gemini_cli",
+            "qwen_code",
+            "opencode",
+        ] {
+            let found: Vec<_> = processes
+                .iter()
+                .filter(|process| is_agent_process(process, provider))
+                .map(|process| {
+                    (
+                        process.pid,
+                        process.cwd.clone().unwrap_or_default(),
+                        launch::host_of(&ancestors(&processes, process.pid)),
+                    )
+                })
+                .collect();
+            println!("{provider}: {found:#?}");
+            println!(
+                "  cli={} desktop={:?} editor={:?}",
+                cli_installed(provider),
+                desktop_app(provider),
+                editor_with_extension(provider)
+            );
+        }
     }
 
     #[test]

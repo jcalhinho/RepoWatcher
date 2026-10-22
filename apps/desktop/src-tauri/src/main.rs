@@ -796,6 +796,13 @@ async fn receive_claude_hook(
             if let Ok(mut pids) = state.agent_pids.lock() {
                 pids.insert(event.session_id.clone(), pid);
             }
+            // Remember where the session runs (terminal, editor, desktop app) while it is alive,
+            // so it can be started again in the same place once it has ended.
+            let session_id = event.session_id.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                focus::note_host(&session_id, pid);
+            })
+            .await;
         }
     }
     if !persist_event(&state, event) {
