@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LlmClient, LlmCompletion, LlmMessage } from "../src/llm-client.js";
-import { buildServer } from "../src/server.js";
+import { buildServer, isLoopbackHost } from "../src/server.js";
 
 class FakeLlmClient implements LlmClient {
   private readonly outputs: string[];
@@ -208,6 +208,14 @@ async function createPolyglotRepoFixture(): Promise<string> {
 }
 
 describe("API chat modes", () => {
+  it("allows only loopback bind addresses", () => {
+    expect(isLoopbackHost("127.0.0.1")).toBe(true);
+    expect(isLoopbackHost("::1")).toBe(true);
+    expect(isLoopbackHost("localhost")).toBe(true);
+    expect(isLoopbackHost("0.0.0.0")).toBe(false);
+    expect(isLoopbackHost("192.168.1.20")).toBe(false);
+  });
+
   it("serves the web UI shell on root route", async () => {
     const server = await buildServer();
     serversToClose.push(server);
@@ -488,6 +496,29 @@ describe("API chat modes", () => {
 
     const diskContent = await readFile(path.join(repoPath, "README.md"), "utf8");
     expect(diskContent).toBe(newContent);
+  });
+
+  it("rejects patching a file above the supported size without truncating it", async () => {
+    const repoPath = await createLocalRepoFixture();
+    const largeContent = "x".repeat(1_000_001);
+    await writeFile(path.join(repoPath, "large.txt"), largeContent, "utf8");
+    const server = await buildServer();
+    serversToClose.push(server);
+    const sessionResponse = await server.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { repoPath }
+    });
+    const sessionPayload = sessionResponse.json() as { id: string };
+
+    const response = await server.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionPayload.id}/apply_patch`,
+      payload: { path: "large.txt", newContent: "replacement", apply: true }
+    });
+
+    expect(response.statusCode).toBe(413);
+    await expect(readFile(path.join(repoPath, "large.txt"), "utf8")).resolves.toBe(largeContent);
   });
 
   it("protects apply_patch when REPO_WATCHER_PATCH_TOKEN is configured", async () => {

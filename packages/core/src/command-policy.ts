@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
+import { resolveExistingInsideRoot } from "./path-guard.js";
 
 export type Command = string[];
 
@@ -268,15 +270,6 @@ function isSafeWindowsReadCommand(command: Command): boolean {
 export function createDefaultCommandPolicy(): CommandPolicy {
   const rules: CommandRule[] = [
     isSafeListCommand,
-    ["npm", "test"],
-    ["npm", "run", "lint"],
-    ["npm", "run", "build"],
-    ["pnpm", "test"],
-    ["pnpm", "lint"],
-    ["pnpm", "build"],
-    ["yarn", "test"],
-    ["yarn", "lint"],
-    ["yarn", "build"],
     isSafeReadCommand,
     isSafeReadPipelineCommand,
     isSafeListFilterPipelineCommand
@@ -305,6 +298,25 @@ async function spawnCommand(
   timeoutMs: number,
   stdinContent?: string
 ): Promise<CommandResult> {
+  if (process.platform === "win32") {
+    const psQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+    let script: string | null = null;
+    if (command[0] === "cat") script = `Get-Content -Raw -LiteralPath ${psQuote(command[1])}`;
+    if ((command[0] === "head" || command[0] === "tail") && command[1] === "-n") {
+      const selector = command[0] === "head" ? "First" : "Last";
+      script = command.length === 4
+        ? `Get-Content -LiteralPath ${psQuote(command[3])} -${command[0] === "head" ? "TotalCount" : "Tail"} ${command[2]}`
+        : `$input | Select-Object -${selector} ${command[2]}`;
+    }
+    if (command[0] === "ls") script = `Get-ChildItem -Force -Name -LiteralPath ${psQuote(command[2] || ".")}`;
+    if (command[0] === "grep") {
+      const pattern = command.at(-1) || "";
+      script = `$input | ForEach-Object { if ($_ -match ${psQuote(pattern)}) { $_ } }`;
+    }
+    if (script) {
+      command = ["powershell.exe", "-NoProfile", "-Command", script];
+    }
+  }
   return new Promise<CommandResult>((resolve, reject) => {
     const sanitizedEnv: NodeJS.ProcessEnv = { ...process.env };
     delete sanitizedEnv.LLM_API_KEY;
@@ -359,7 +371,7 @@ async function spawnCommand(
 
       resolve({
         exitCode: exitCode ?? 1,
-        stdout,
+        stdout: stdout.replaceAll("\r\n", "\n"),
         stderr
       });
     });
@@ -382,6 +394,16 @@ export async function runAllowedCommand(
 
   const normalizedCommand = normalizeCommandTokens(command);
   const pipeline = splitPipeline(normalizedCommand);
+  for (const segment of pipeline ?? [normalizedCommand]) {
+    const pathToken = segment[0] === "cat" ? segment[1]
+      : (segment[0] === "head" || segment[0] === "tail") && segment.length === 4 ? segment[3]
+      : segment[0] === "ls" ? segment[2] || "."
+      : segment[0] === "cmd" && segment[1] === "/c" && segment[2] === "type" ? segment[3]
+      : segment[0] === "cmd" && segment[1] === "/c" && segment[2] === "dir" ? segment[3] || "."
+      : isPowerShellBinary(segment[0]) && segment[3] === "Get-Content" ? segment[5]
+      : null;
+    if (pathToken) await resolveExistingInsideRoot(repoRoot, pathToken);
+  }
   if (!pipeline) {
     return spawnCommand(repoRoot, normalizedCommand, timeoutMs);
   }

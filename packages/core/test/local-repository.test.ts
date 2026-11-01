@@ -1,10 +1,29 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocalRepository } from "../src/local-repository.js";
+import { parseRipgrepJsonOutput } from "../src/local-repository.js";
 
 describe("LocalRepository", () => {
+  it("parses ripgrep JSON paths containing Windows drive letters and colons", () => {
+    const output = [
+      JSON.stringify({ type: "match", data: {
+        path: { text: "C:\\work\\repo\\src\\main.ts" },
+        lines: { text: "const url = 'https://example.test/a:b';\n" },
+        line_number: 12
+      } })
+    ].join("\n");
+
+    expect(parseRipgrepJsonOutput("C:\\work\\repo", output)).toEqual([
+      {
+        path: "src/main.ts",
+        line: 12,
+        preview: "const url = 'https://example.test/a:b';"
+      }
+    ]);
+  });
+
   it("lists, reads, writes, and searches files", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "repo-watcher-test-"));
     await mkdir(path.join(root, "src"), { recursive: true });
@@ -51,5 +70,29 @@ describe("LocalRepository", () => {
     expect(files.some((file) => file.includes("venv"))).toBe(false);
     expect(files.some((file) => file.includes("__pycache__"))).toBe(false);
     expect(files.some((file) => file.includes(".angular"))).toBe(false);
+  });
+
+  it("does not read or write through a symlink that escapes the repository", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "repo-watcher-root-"));
+    const outside = await mkdtemp(path.join(os.tmpdir(), "repo-watcher-outside-"));
+    await writeFile(path.join(outside, "secret.txt"), "outside secret", "utf8");
+    await symlink(outside, path.join(root, "external"), "junction");
+    const missingTarget = path.join(outside, "removed-target");
+    await mkdir(missingTarget);
+    await symlink(missingTarget, path.join(root, "broken"), "junction");
+    await rm(missingTarget, { recursive: true });
+
+    const repo = await LocalRepository.open(root);
+    await expect(repo.readTextFile("external/secret.txt")).rejects.toThrow(
+      /Path escapes repository root/
+    );
+    await expect(repo.writeTextFile("external/secret.txt", "changed")).rejects.toThrow(
+      /Path escapes repository root/
+    );
+    await expect(repo.writeTextFile("broken/new.txt", "changed")).rejects.toThrow(
+      /Path escapes repository root/
+    );
+    await expect(repo.listFiles()).resolves.not.toContain("external/secret.txt");
+    await expect(readFile(path.join(outside, "secret.txt"), "utf8")).resolves.toBe("outside secret");
   });
 });

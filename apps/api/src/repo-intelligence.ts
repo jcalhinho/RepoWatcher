@@ -758,7 +758,7 @@ async function heuristicRepoOverview(
     ),
     directoryNotes: topDirectories,
     entryPoints: Array.from(new Set(entries)).slice(0, 10),
-    suggestedCommands: ["/run ls -la", "/run npm test", "/run npm run lint"],
+    suggestedCommands: ["/run ls -la", "/run cat package.json", "/run head -n 120 README.md"],
     strengths,
     weaknesses,
     urgentImprovements,

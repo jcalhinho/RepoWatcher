@@ -1,0 +1,69 @@
+name: Model price missing or wrong
+description: A model has no estimated cost, or the wrong one.
+title: "[Price]: "
+labels: ["pricing"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Estimated costs use public list prices from `apps/desktop/src/ui/pricing.ts`.
+        A price is added **only** with a link to the provider's official pricing page — never a guess or a third-party aggregator.
+        Subscriptions, plans and private discounts are out of scope: the cost is an estimate, not a bill.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is the problem?
+      options:
+        - Price missing for a model
+        - Price is wrong or outdated
+        - Model id is not recognised (same model, different spelling)
+        - Cache prices missing or wrong
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider
+      placeholder: "Anthropic, OpenAI, Google, Alibaba, …"
+    validations:
+      required: true
+
+  - type: input
+    id: model-id
+    attributes:
+      label: Model id as reported by the agent
+      description: As shown in the app (Sessions → session → models) or in the agent's logs.
+      placeholder: "claude-sonnet-5-5"
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: Official pricing page
+      placeholder: "https://…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: prices
+    attributes:
+      label: Prices (USD per million tokens, standard tier)
+      value: |
+        Input:
+        Output:
+        Cache read (if published):
+        Cache write (if published):
+        Conditions (e.g. different rate above N input tokens):
+    validations:
+      required: true
+
+  - type: input
+    id: checked-on
+    attributes:
+      label: Date you read the page
+      placeholder: "2026-10-21"
+    validations:
+      required: true
