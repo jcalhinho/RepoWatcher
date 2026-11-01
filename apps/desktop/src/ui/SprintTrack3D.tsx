@@ -81,11 +81,13 @@ export default function SprintTrack3D({ lanes, reducedMotion }: { lanes: RaceLan
       className="sprint-canvas"
       shadows
       flat
+      frameloop="demand"
       dpr={[1, 1.75]}
       camera={{ fov: 30, position: [0, 7, 12], near: 0.1, far: 140 }}
       gl={{ antialias: true, alpha: true, powerPreference: "low-power" }}
       aria-label={t("Piste 3D de la course des agents", "3D track of the agents’ race")}
     >
+      <FrameLimiter fps={reducedMotion ? 10 : active.length ? 30 : 20} />
       <CameraRig leaderX={leaderX} reducedMotion={reducedMotion} />
       <hemisphereLight args={["#e4f5ff", "#6fae5f", 1.25]} />
       <directionalLight
@@ -128,6 +130,16 @@ function assignBubbleRows(lanes: RaceLane[]) {
 
 /** Near the finish the bubble opens to the left of the runner so it stays inside the stage. */
 const bubbleFlipped = (progress: number) => progress > 60;
+
+/** Draws at a fixed low rate instead of every display refresh, and not at all while the window is hidden. */
+function FrameLimiter({ fps }: { fps: number }) {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (!document.hidden) invalidate(); }, 1000 / fps);
+    return () => window.clearInterval(timer);
+  }, [fps, invalidate]);
+  return null;
+}
 
 function CameraRig({ leaderX, reducedMotion }: { leaderX: number; reducedMotion: boolean }) {
   const { camera, size } = useThree();

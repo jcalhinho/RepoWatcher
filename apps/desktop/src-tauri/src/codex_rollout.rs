@@ -78,7 +78,7 @@ impl RolloutMonitor {
                     },
                 );
             }
-            if let Some(cursor) = self.cursors.get_mut(&path) {
+            if let Some(cursor) = self.cursors.get_mut(&path).filter(|cursor| cursor.offset != length) {
                 events.extend(read_appended_records(
                     &path,
                     cursor,

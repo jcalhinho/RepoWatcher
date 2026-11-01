@@ -19,8 +19,8 @@ describe("provider table", () => {
 });
 
 describe("active providers", () => {
-  it("shows only Claude Code, Codex, OpenCode, Qwen Code and Gemini CLI for now", () => {
-    expect(activeProviders.map((provider) => provider.name).sort()).toEqual(["Claude Code", "Codex", "Gemini CLI", "OpenCode", "Qwen Code"]);
+  it("shows only Claude Code, Codex, OpenCode, Qwen Code, Reasonix, Cursor, GitHub Copilot and Gemini CLI for now", () => {
+    expect(activeProviders.map((provider) => provider.name).sort()).toEqual(["Claude Code", "Codex", "Cursor", "Gemini CLI", "GitHub Copilot", "OpenCode", "Qwen Code", "Reasonix"]);
   });
 });
 

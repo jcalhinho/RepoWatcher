@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type ConnectorKind = "claude" | "codex" | "gemini" | "opencode" | "qwen";
+export type ConnectorKind = "claude" | "codex" | "gemini" | "opencode" | "qwen" | "reasonix" | "copilot" | "cursor";
 
 export type Provider = {
   /** Stable UI identifier (React keys, 3D lane ids). */
@@ -23,11 +23,12 @@ export type Provider = {
 export const providers: Provider[] = [
   { id: "claude_code", eventKey: "claude_code", name: "Claude Code", initials: "C", color: "#d95926", surface: "#3a2219", connector: { kind: "claude" } },
   { id: "codex", eventKey: "codex", name: "Codex", initials: "⌘", color: "#199e70", surface: "#173229", connector: { kind: "codex", scope: "Journaux locaux" } },
-  { id: "cursor", eventKey: "cursor", name: "Cursor", initials: "◈", color: "#c98500", surface: "#352a14" },
+  { id: "cursor", eventKey: "cursor", name: "Cursor", initials: "◈", color: "#008300", surface: "#14301a", connector: { kind: "cursor", scope: "Hooks Cursor" } },
   { id: "opencode", eventKey: "opencode", name: "OpenCode", initials: "O", color: "#d55181", surface: "#3a1f2b", connector: { kind: "opencode", scope: "SQLite local" } },
-  { id: "copilot", eventKey: "github_copilot", name: "GitHub Copilot", initials: "⌘", color: "#c1b5ff", surface: "#302a43" },
+  { id: "copilot", eventKey: "github_copilot", name: "GitHub Copilot", initials: "⌘", color: "#e66767", surface: "#402727", connector: { kind: "copilot", scope: "Copilot CLI" } },
   { id: "gemini", eventKey: "gemini_cli", name: "Gemini CLI", initials: "✳", color: "#3987e5", surface: "#1c2c45", connector: { kind: "gemini", scope: "Journaux locaux" } },
   { id: "qwen", eventKey: "qwen_code", name: "Qwen Code", initials: "Q", color: "#9085e9", surface: "#28264a", connector: { kind: "qwen", scope: "Journaux locaux" } },
+  { id: "reasonix", eventKey: "reasonix", name: "Reasonix", initials: "R", color: "#c98500", surface: "#352a14", connector: { kind: "reasonix", scope: "Journaux locaux" } },
   { id: "cline", eventKey: "cline", name: "Cline", initials: "C", color: "#efb477", surface: "#3c3023" },
   { id: "roo", eventKey: "roo_code", name: "Roo Code", initials: "R", color: "#80c99c", surface: "#24382c" },
   { id: "continue", eventKey: "continue", name: "Continue", initials: "↳", color: "#c0c7d4", surface: "#30343c" },
@@ -47,7 +48,7 @@ export function providerById(id: string): Provider {
  * palette checks (adjacent CVD ΔE ≥ 16, normal-vision ΔE ≥ 15 on #171b22): re-run the validator
  * before reordering or adding one. Other providers stay in the table (backend keys) but are hidden.
  */
-export const activeProviders: Provider[] = ["claude_code", "gemini", "codex", "qwen", "opencode"].map(providerById);
+export const activeProviders: Provider[] = ["claude_code", "gemini", "codex", "qwen", "opencode", "reasonix", "cursor", "copilot"].map(providerById);
 
 /*
  * Custom connectors (open HTTP API) are providers too, keyed `custom:<connector id>`. They are kept

@@ -2,12 +2,14 @@
 
 mod claude_transcripts;
 mod codex_rollout;
+mod copilot_cli_sessions;
 mod focus;
 mod gemini_sessions;
 mod ingest;
 mod no_window;
 mod opencode_sessions;
 mod qwen_sessions;
+mod reasonix_sessions;
 mod workspace;
 
 use axum::{
@@ -76,6 +78,22 @@ struct GeminiSetup {
 
 #[derive(Serialize)]
 struct QwenSetup {
+    projects_dir: String,
+    available: bool,
+    capture_prompts: bool,
+    capture_commands: bool,
+}
+
+#[derive(Serialize)]
+struct CopilotSetup {
+    sessions_dir: String,
+    available: bool,
+    capture_prompts: bool,
+    capture_commands: bool,
+}
+
+#[derive(Serialize)]
+struct ReasonixSetup {
     projects_dir: String,
     available: bool,
     capture_prompts: bool,
@@ -188,6 +206,28 @@ fn gemini_setup(state: tauri::State<'_, CollectorState>) -> GeminiSetup {
 fn qwen_setup(state: tauri::State<'_, CollectorState>) -> QwenSetup {
     let projects_dir = qwen_sessions::projects_root();
     QwenSetup {
+        projects_dir: projects_dir.display().to_string(),
+        available: projects_dir.is_dir(),
+        capture_prompts: state.capture_prompts.load(Ordering::Relaxed),
+        capture_commands: state.capture_commands.load(Ordering::Relaxed),
+    }
+}
+
+#[tauri::command]
+fn copilot_setup(state: tauri::State<'_, CollectorState>) -> CopilotSetup {
+    let sessions_dir = copilot_cli_sessions::sessions_root();
+    CopilotSetup {
+        sessions_dir: sessions_dir.display().to_string(),
+        available: sessions_dir.is_dir(),
+        capture_prompts: state.capture_prompts.load(Ordering::Relaxed),
+        capture_commands: state.capture_commands.load(Ordering::Relaxed),
+    }
+}
+
+#[tauri::command]
+fn reasonix_setup(state: tauri::State<'_, CollectorState>) -> ReasonixSetup {
+    let projects_dir = reasonix_sessions::projects_root();
+    ReasonixSetup {
         projects_dir: projects_dir.display().to_string(),
         available: projects_dir.is_dir(),
         capture_prompts: state.capture_prompts.load(Ordering::Relaxed),
@@ -536,8 +576,10 @@ fn repository_snapshot(path: String) -> Result<RepositorySnapshot, String> {
         return Err("Le chemin sélectionné n’est pas un dossier.".into());
     }
     let git = |args: &[&str]| -> Result<String, String> {
+        // Polled often: never take the index lock, which could make the user's own git commands fail.
         let output = Command::new("git")
             .quiet()
+            .arg("--no-optional-locks")
             .arg("-C")
             .arg(&root)
             .args(args)
@@ -1127,6 +1169,24 @@ fn main() {
                     persist_event(&qwen_state, event);
                 },
             );
+            let copilot_state = state.clone();
+            copilot_cli_sessions::spawn(
+                copilot_cli_sessions::sessions_root(),
+                state.capture_prompts.clone(),
+                state.capture_commands.clone(),
+                move |event| {
+                    persist_event(&copilot_state, event);
+                },
+            );
+            let reasonix_state = state.clone();
+            reasonix_sessions::spawn(
+                reasonix_sessions::projects_root(),
+                state.capture_prompts.clone(),
+                state.capture_commands.clone(),
+                move |event| {
+                    persist_event(&reasonix_state, event);
+                },
+            );
             let opencode_state = state.clone();
             opencode_sessions::spawn(
                 state.capture_prompts.clone(),
@@ -1153,6 +1213,8 @@ fn main() {
             gemini_setup,
             opencode_setup,
             qwen_setup,
+            reasonix_setup,
+            copilot_setup,
             cursor_setup,
             load_session_events,
             load_analytics_events,

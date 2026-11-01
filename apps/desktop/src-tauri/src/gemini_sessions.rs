@@ -84,13 +84,16 @@ impl GeminiMonitor {
             }
             if let Some(cursor) = self.cursors.get_mut(&path) {
                 if is_jsonl {
-                    events.extend(read_appended(
-                        &path,
-                        cursor,
-                        self.started_utc,
-                        capture_prompts,
-                        capture_commands,
-                    ));
+                    // Unchanged files are not opened (costly on Windows: antivirus filters).
+                    if cursor.offset != length {
+                        events.extend(read_appended(
+                            &path,
+                            cursor,
+                            self.started_utc,
+                            capture_prompts,
+                            capture_commands,
+                        ));
+                    }
                 } else if cursor.legacy_modified != modified {
                     cursor.legacy_modified = modified;
                     events.extend(read_legacy_snapshot(

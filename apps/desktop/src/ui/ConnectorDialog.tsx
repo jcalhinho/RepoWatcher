@@ -7,9 +7,12 @@ import type { ConnectorKind } from "./providers";
 type ClaudeSetup = { endpoint: string; token: string; settings_fragment: string };
 type CodexSetup = { sessions_dir: string; available: boolean };
 type GeminiSetup = { sessions_dir: string; available: boolean };
+type CopilotSetup = { sessions_dir: string; available: boolean };
+type CursorSetup = { endpoint: string; settings_fragment: string; capture_commands: boolean };
+type ReasonixSetup = { projects_dir: string; available: boolean };
 type OpenCodeSetup = { data_dir: string; database_paths: string[]; available: boolean };
 type QwenSetup = { projects_dir: string; available: boolean };
-type SetupByKind = { claude: ClaudeSetup; codex: CodexSetup; gemini: GeminiSetup; opencode: OpenCodeSetup; qwen: QwenSetup };
+type SetupByKind = { claude: ClaudeSetup; codex: CodexSetup; gemini: GeminiSetup; opencode: OpenCodeSetup; qwen: QwenSetup; reasonix: ReasonixSetup; copilot: CopilotSetup; cursor: CursorSetup };
 
 export type ConnectorSetup = { [K in ConnectorKind]: { kind: K; setup: SetupByKind[K] } }[ConnectorKind];
 
@@ -18,7 +21,10 @@ const SETUP_COMMANDS: Record<ConnectorKind, string> = {
   codex: "codex_setup",
   gemini: "gemini_setup",
   opencode: "opencode_setup",
-  qwen: "qwen_setup"
+  qwen: "qwen_setup",
+  reasonix: "reasonix_setup",
+  copilot: "copilot_setup",
+  cursor: "cursor_setup"
 };
 
 export async function loadConnectorSetup(kind: ConnectorKind): Promise<ConnectorSetup> {
@@ -30,18 +36,23 @@ export async function loadConnectorSetup(kind: ConnectorKind): Promise<Connector
 export function connectorSource(connector: ConnectorSetup): { path: string; found: boolean } | null {
   switch (connector.kind) {
     case "claude": return null;
+    case "cursor": return null;
     case "codex": return { path: connector.setup.sessions_dir, found: connector.setup.available };
     case "gemini": return { path: connector.setup.sessions_dir, found: connector.setup.available };
     case "qwen": return { path: connector.setup.projects_dir, found: connector.setup.available };
+    case "reasonix": return { path: connector.setup.projects_dir, found: connector.setup.available };
+    case "copilot": return { path: connector.setup.sessions_dir, found: connector.setup.available };
     case "opencode": return { path: connector.setup.database_paths.join(" · ") || connector.setup.data_dir, found: connector.setup.available };
   }
 }
 
-function readOnlyCopy(kind: Exclude<ConnectorKind, "claude">): { name: string; how: string; tokens: string } {
+function readOnlyCopy(kind: Exclude<ConnectorKind, "claude" | "cursor">): { name: string; how: string; tokens: string } {
   switch (kind) {
     case "codex": return { name: "Codex", how: t("L’app lit les journaux de session que Codex écrit sur ton disque, au fur et à mesure.", "The app reads the session logs Codex writes to your disk, as they are written."), tokens: t("Codex fournit les tokens de chaque requête au modèle.", "Codex reports the tokens of each model request.") };
     case "gemini": return { name: "Gemini CLI", how: t("L’app lit les enregistrements de conversation que Gemini CLI écrit pour chaque projet.", "The app reads the conversation records Gemini CLI writes for each project."), tokens: t("Gemini CLI fournit les tokens et la durée de chaque réponse.", "Gemini CLI reports the tokens and duration of each answer.") };
     case "qwen": return { name: "Qwen Code", how: t("L’app lit les journaux de conversation que Qwen Code écrit pour chaque projet.", "The app reads the conversation logs Qwen Code writes for each project."), tokens: t("Qwen Code fournit les tokens, le modèle et la durée de chaque requête.", "Qwen Code reports the tokens, model and duration of each request.") };
+    case "reasonix": return { name: "Reasonix", how: t("L’app lit les journaux de session que Reasonix Studio écrit pour chaque projet.", "The app reads the session logs Reasonix Studio writes for each project."), tokens: t("Reasonix fournit les tokens (dont le cache) et la durée de chaque requête.", "Reasonix reports the tokens (cache included) and duration of each request.") };
+    case "copilot": return { name: "GitHub Copilot", how: t("L’app lit les journaux de session que Copilot CLI écrit pour chaque session.", "The app reads the session logs Copilot CLI writes for each session."), tokens: t("Copilot CLI fournit les tokens (dont le cache), le modèle et la durée de chaque requête. Seul Copilot CLI est observé, pas Copilot dans l’éditeur.", "Copilot CLI reports the tokens (cache included), model and duration of each request. Only Copilot CLI is observed, not Copilot in the editor.") };
     case "opencode": return { name: "OpenCode", how: t("L’app lit la base de données d’OpenCode en lecture seule.", "The app reads OpenCode’s database, read-only."), tokens: t("OpenCode fournit les tokens de chaque réponse.", "OpenCode reports the tokens of each answer.") };
   }
 }
@@ -49,22 +60,23 @@ function readOnlyCopy(kind: Exclude<ConnectorKind, "claude">): { name: string; h
 /** How a connector works and, for Claude Code, the hooks to add. Capture options live in Réglages. */
 export function ConnectorSetupDialog({ connector, onClose }: { connector: ConnectorSetup; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
-  if (connector.kind === "claude") {
+  if (connector.kind === "claude" || connector.kind === "cursor") {
     const { setup } = connector;
+    const cursor = connector.kind === "cursor";
     const copy = async () => {
       await navigator.clipboard.writeText(setup.settings_fragment);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     };
-    return <Dialog id="claude" title={t("Brancher Claude Code", "Set up Claude Code")} onClose={onClose}>
-      <p>{t("Claude Code prévient l’app de chacune de ses actions grâce à des hooks : de petites notifications envoyées à l’app pendant qu’il travaille. Les tokens viennent en plus de son journal de session, lu automatiquement.", "Claude Code tells the app about each of its actions through hooks: small notifications sent to the app while it works. Tokens also come from its session log, read automatically.")}</p>
+    return <Dialog id={connector.kind} title={cursor ? t("Brancher Cursor", "Set up Cursor") : t("Brancher Claude Code", "Set up Claude Code")} onClose={onClose}>
+      <p>{cursor ? t("Cursor prévient l’app de chacune de ses actions grâce à des hooks : de petites notifications envoyées à l’app pendant qu’il travaille. Cursor ne transmet pas ses tokens : l’app affiche « non fournis » plutôt que d’inventer un chiffre.", "Cursor tells the app about each of its actions through hooks: small notifications sent to the app while it works. Cursor does not report its tokens: the app shows “not reported” rather than making up a number.") : t("Claude Code prévient l’app de chacune de ses actions grâce à des hooks : de petites notifications envoyées à l’app pendant qu’il travaille. Les tokens viennent en plus de son journal de session, lu automatiquement.", "Claude Code tells the app about each of its actions through hooks: small notifications sent to the app while it works. Tokens also come from its session log, read automatically.")}</p>
       <ol className="steps">
-        <li>{t("Ouvre ton fichier de réglages Claude Code :", "Open your Claude Code settings file:")} <code>~/.claude/settings.json</code> (Windows : <code>%USERPROFILE%\.claude\settings.json</code>).</li>
+        <li>{cursor ? t("Ouvre (ou crée) ton fichier de hooks Cursor :", "Open (or create) your Cursor hooks file:") : t("Ouvre ton fichier de réglages Claude Code :", "Open your Claude Code settings file:")} {cursor ? <code>~/.cursor/hooks.json</code> : <code>~/.claude/settings.json</code>} (Windows : {cursor ? <code>%USERPROFILE%\.cursor\hooks.json</code> : <code>%USERPROFILE%\.claude\settings.json</code>}).</li>
         <li>{t("Ajoute le bloc hooks ci-dessous à l’objet existant, sans effacer le reste du fichier.", "Add the hooks block below to the existing object, without erasing the rest of the file.")}</li>
-        <li>{t("Les sessions Claude Code apparaissent ensuite dans l’app. L’app ne modifie jamais ce fichier elle-même.", "Claude Code sessions then show up in the app. The app never edits this file itself.")}</li>
+        <li>{t(`Les sessions ${cursor ? "Cursor" : "Claude Code"} apparaissent ensuite dans l’app. L’app ne modifie jamais ce fichier elle-même.`, `${cursor ? "Cursor" : "Claude Code"} sessions then show up in the app. The app never edits this file itself.`)}</li>
       </ol>
-      <textarea readOnly value={setup.settings_fragment} aria-label={t("Bloc hooks à ajouter aux réglages Claude Code", "Hooks block to add to the Claude Code settings")} />
-      <p className="dialog-note">{t("Ce bloc contient un jeton propre à cette installation : si tu réinstalles l’app, recopie-le. Si l’app est fermée, les hooks abandonnent après 2 secondes sans gêner Claude Code.", "This block holds a token specific to this installation: copy it again if you reinstall the app. If the app is closed, hooks give up after 2 seconds without disturbing Claude Code.")}</p>
+      <textarea readOnly value={setup.settings_fragment} aria-label={cursor ? t("Bloc hooks à ajouter au fichier de hooks Cursor", "Hooks block to add to the Cursor hooks file") : t("Bloc hooks à ajouter aux réglages Claude Code", "Hooks block to add to the Claude Code settings")} />
+      <p className="dialog-note">{cursor ? t("Le bloc lit le jeton de l’app dans son dossier de configuration (il faut python3 sur Mac/Linux, PowerShell sur Windows). Si l’app est fermée, les hooks abandonnent sans gêner Cursor.", "The block reads the app’s token from its config folder (python3 is needed on Mac/Linux, PowerShell on Windows). If the app is closed, hooks give up without disturbing Cursor.") : t("Ce bloc contient un jeton propre à cette installation : si tu réinstalles l’app, recopie-le. Si l’app est fermée, les hooks abandonnent après 2 secondes sans gêner Claude Code.", "This block holds a token specific to this installation: copy it again if you reinstall the app. If the app is closed, hooks give up after 2 seconds without disturbing Claude Code.")}</p>
       <div className="dialog-actions"><button className="button" onClick={onClose}>{t("Fermer", "Close")}</button><button className="button primary" onClick={copy}>{copied ? t("Copié ✓", "Copied ✓") : t("Copier le bloc", "Copy the block")}</button></div>
     </Dialog>;
   }

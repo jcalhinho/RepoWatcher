@@ -14,6 +14,9 @@ function how(key: string) {
     case "codex": return t("Journaux de session Codex, lus au fil de l’eau.", "Codex session logs, read as they are written.");
     case "gemini_cli": return t("Enregistrements de conversation Gemini CLI.", "Gemini CLI conversation records.");
     case "qwen_code": return t("Journaux de conversation Qwen Code.", "Qwen Code conversation logs.");
+    case "reasonix": return t("Journaux de session Reasonix Studio.", "Reasonix Studio session logs.");
+    case "github_copilot": return t("Journaux de session de Copilot CLI.", "Copilot CLI session logs.");
+    case "cursor": return t("Hooks Cursor (actions et fichiers modifiés, en direct). Pas de tokens.", "Cursor hooks (live actions and edited files). No tokens.");
     case "opencode": return t("Base de données OpenCode, en lecture seule.", "OpenCode database, read-only.");
     default: return "";
   }
@@ -27,6 +30,7 @@ function health(provider: Provider, setup: ConnectorSetup | undefined, lastAt: n
     if (lastAt !== null) return { tone: "warn", label: t("Tokens reçus, actions absentes", "Tokens received, no actions"), advice: t("Le journal est lu mais les hooks ne sont pas installés : clique sur « Configurer ».", "The log is read but hooks are not installed: click “Set up”.") };
     return { tone: "warn", label: t("Hooks à installer", "Hooks to install"), advice: t("Ajoute le bloc de hooks à tes réglages Claude Code (bouton « Configurer »).", "Add the hooks block to your Claude Code settings (“Set up” button).") };
   }
+  if (provider.eventKey === "cursor" && lastAt === null) return { tone: "warn", label: t("Hooks à installer", "Hooks to install"), advice: t("Ajoute le bloc de hooks à ~/.cursor/hooks.json (bouton « Configurer »).", "Add the hooks block to ~/.cursor/hooks.json (“Set up” button).") };
   if (lastAt !== null) return { tone: "ok", label: t(`Actif · dernier événement ${since(lastAt, now)}`, `Active · last event ${since(lastAt, now)}`), advice: t("Tout fonctionne.", "Everything works.") };
   const source = setup ? connectorSource(setup) : null;
   if (!source) return { tone: "off", label: t("Vérification…", "Checking…"), advice: "" };
@@ -49,7 +53,7 @@ export function ConnectorsPage({ events, now, onConfigure }: { events: SessionEv
   return <section className="page">
     <SectionHeader
       title={t("Connecteurs", "Connectors")}
-      description={t("Un connecteur, c’est la façon dont l’app observe un agent. Quatre agents sont lus automatiquement, Claude Code demande une petite configuration, et tu peux brancher n’importe quel autre agent via l’API locale.", "A connector is how the app observes an agent. Four agents are read automatically, Claude Code needs a small setup, and you can plug in any other agent through the local API.")}
+      description={t("Un connecteur, c’est la façon dont l’app observe un agent. Six agents sont lus automatiquement, Claude Code et Cursor demandent une petite configuration, et tu peux brancher n’importe quel autre agent via l’API locale.", "A connector is how the app observes an agent. Six agents are read automatically, Claude Code and Cursor need a small setup, and you can plug in any other agent through the local API.")}
       details={t("Les connecteurs lisent ce que les agents écrivent déjà sur ton ordinateur (journaux, base locale) ou ce qu’ils envoient eux-mêmes (hooks Claude Code). Ils ne pilotent jamais les agents et ne modifient aucun de leurs réglages.", "Connectors read what agents already write on your computer (logs, local database) or what they send themselves (Claude Code hooks). They never drive agents and never change their settings.")}
     />
     <div className="connector-list">
@@ -59,6 +63,7 @@ export function ConnectorsPage({ events, now, onConfigure }: { events: SessionEv
         const hookEvents = own.some((event) => event.kind !== "model_usage" && event.kind !== "session_started");
         const setup = setups[provider.eventKey];
         const state = health(provider, setup, lastAt, hookEvents, now);
+        const hooked = provider.eventKey === "claude_code" || provider.eventKey === "cursor";
         return <article className={`connector-row tone-${state.tone}`} key={provider.id} style={{ "--agent-color": provider.color } as CSSProperties}>
           <ProviderMark provider={provider} />
           <div className="connector-row-main">
@@ -66,7 +71,7 @@ export function ConnectorsPage({ events, now, onConfigure }: { events: SessionEv
             <span>{how(provider.eventKey)}</span>
           </div>
           <div className="connector-row-state"><span className="state-dot" aria-hidden="true" /><span><b>{state.label}</b>{state.advice && <small>{state.advice}</small>}</span></div>
-          <button className={`button ${provider.eventKey === "claude_code" && state.tone !== "ok" ? "primary" : ""}`} disabled={!setup} onClick={() => setup && onConfigure(setup)}>{provider.eventKey === "claude_code" ? t("Configurer", "Set up") : t("Détails", "Details")}</button>
+          <button className={`button ${hooked && state.tone !== "ok" ? "primary" : ""}`} disabled={!setup} onClick={() => setup && onConfigure(setup)}>{hooked ? t("Configurer", "Set up") : t("Détails", "Details")}</button>
         </article>;
       })}
     </div>

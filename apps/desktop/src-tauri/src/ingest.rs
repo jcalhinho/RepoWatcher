@@ -10,8 +10,9 @@ use uuid::Uuid;
 
 pub const MAX_EVENTS_PER_REQUEST: usize = 500;
 const NAMESPACE: Uuid = Uuid::from_u128(0x2b6f_9a41_0c3d_4f7e_9d21_77a0_c4e3_b5f1);
-/// Colours for custom agents, after the five built-in ones (validated palette slots).
-const COLORS: [&str; 3] = ["#c98500", "#008300", "#e66767"];
+/// Colours for custom agents. The eight validated palette slots all belong to built-in agents, so
+/// these are neutral tones that differ by lightness; the extra ones fall back to a fixed grey.
+const COLORS: [&str; 3] = ["#a8b3c7", "#7d8aa3", "#5d6b85"];
 
 pub const TABLE: &str = "CREATE TABLE IF NOT EXISTS custom_connectors (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL, token TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);";
 
@@ -112,7 +113,7 @@ pub fn create(connection: &Connection, name: &str) -> Result<CustomConnector, St
     let color = COLORS
         .get(existing.len())
         .copied()
-        .unwrap_or("#7d8aa3")
+        .unwrap_or("#93a0b8")
         .to_owned();
     let connector = CustomConnector {
         id,

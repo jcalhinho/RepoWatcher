@@ -1,7 +1,8 @@
 # Connecting an agent
 
-Agent Observer ships with built-in connectors for Claude Code, Codex, Gemini CLI, OpenCode and
-Qwen Code. Any other agent, script or tool can show up in the app through the **open local API**,
+Agent Observer ships with built-in connectors for Claude Code, Codex, Gemini CLI, OpenCode,
+Qwen Code, Reasonix (Studio and CLI), GitHub Copilot CLI and Cursor (through hooks, set up in
+the app). Any other agent, script or tool can show up in the app through the **open local API**,
 and new built-in connectors can be contributed in Rust.
 
 ## 1. Open local API (no code change in the app)
@@ -102,7 +103,7 @@ Keep the call non-blocking for the agent: short timeout, errors ignored.
 
 Built-in connectors live in `apps/desktop/src-tauri/src/`, one module per agent
 (`codex_rollout.rs`, `gemini_sessions.rs`, `qwen_sessions.rs`, `opencode_sessions.rs`,
-`claude_transcripts.rs`). They follow the same pattern:
+`claude_transcripts.rs`, `reasonix_sessions.rs`, `copilot_cli_sessions.rs`). They follow the same pattern:
 
 1. **Find the data the agent already writes** (logs, local database) or receives (hooks). Never
    change the agent's settings; read-only access.

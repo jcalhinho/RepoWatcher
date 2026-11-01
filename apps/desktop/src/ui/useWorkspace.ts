@@ -7,8 +7,8 @@ import { pathKey, repositoryForEvent, unresolvedProjectPaths, type Workspace, ty
 const SOURCE_KEY = "repowatcher.workspace-path";
 const LEGACY_REPOSITORY_KEY = "repowatcher.selected-repository";
 const ACTIVE_WINDOW_MS = 2 * 60_000;
-const ACTIVE_REFRESH_MS = 5_000;
-const IDLE_REFRESH_MS = 60_000;
+const ACTIVE_REFRESH_MS = 10_000;
+const IDLE_REFRESH_MS = 180_000;
 
 export type RepositoryState = { snapshot: RepositorySnapshot | null; error: string | null };
 
@@ -88,6 +88,8 @@ export function useWorkspace(events: SessionEvent[]) {
     if (!repositories.length) return;
     let cancelled = false;
     const refresh = async () => {
+      // Each refresh spawns several git processes per repository: not while the window is hidden.
+      if (document.hidden) return;
       const now = Date.now();
       const due = repositories.filter((repository) => {
         const interval = activeRef.current.has(pathKey(repository.path)) ? ACTIVE_REFRESH_MS : IDLE_REFRESH_MS;
